@@ -1,0 +1,19 @@
+{
+  "Modules": [
+    {
+      "Key": "",
+      "Source": "",
+      "Dir": "."
+    },
+    {
+      "Key": "database",
+      "Source": "./modules/rds",
+      "Dir": "modules/rds"
+    },
+    {
+      "Key": "monitoring",
+      "Source": "./modules/cloudwatch",
+      "Dir": "modules/cloudwatch"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "resource": {
+    "aws_s3_bucket": {
+      "app_data": {
+        "bucket": "${var.project_name}-${var.environment}-app-data",
+        "tags": "${local.common_tags}"
+      }
+    },
+    "random_id": {
+      "bucket_suffix": {
+        "byte_length": 4
+      }
+    }
+  },
+  "variable": {
+    "additional_tags": {
+      "description": "Additional tags to apply to all resources",
+      "type": "map(string)",
+      "default": {}
+    }
+  }
+}
