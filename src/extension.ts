@@ -3,10 +3,12 @@ import { TerraformFileCollector } from './indexer/files';
 import { TerraformWatcher } from './indexer/watch';
 import { TerraformTreeDataProvider } from './ui/tree';
 import { TerraformStatusBar } from './ui/status';
+import { TerraformGraphWebview } from './graph/webview';
 import { ProjectIndex } from './types';
 import { registerRevealCommand } from './commands/reveal';
 import { registerCopyAddressCommand } from './commands/copyAddress';
 import { registerSwitchViewModeCommand } from './commands/switchViewMode';
+import { registerShowGraphCommand } from './commands/showGraph';
 
 export function activate(context: vscode.ExtensionContext) {
   // Create the file collector
@@ -21,6 +23,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Create the status bar
   const statusBar = new TerraformStatusBar();
+
+  // Create the graph webview
+  const graphWebview = new TerraformGraphWebview(context);
 
   // Create the tree data provider with watcher
   const treeDataProvider = new TerraformTreeDataProvider(watcher);
@@ -66,15 +71,15 @@ export function activate(context: vscode.ExtensionContext) {
     async () => {
       statusBar.setBuildingState();
       await watcher.rebuildIndex();
-      vscode.window.showInformationMessage(
-        'Terraform Navigator: Index refreshed'
-      );
+      // Quietly refresh without intrusive notifications
+      console.log('[TerraformNavigator] Index refreshed');
     }
   );
 
   const revealCommand = registerRevealCommand(context);
   const copyAddressCommand = registerCopyAddressCommand(context);
   const switchViewModeCommand = registerSwitchViewModeCommand(context);
+  const showGraphCommand = registerShowGraphCommand(context, graphWebview, () => watcher.getCurrentIndex());
 
   // Add to subscriptions for cleanup
   context.subscriptions.push(
@@ -83,10 +88,12 @@ export function activate(context: vscode.ExtensionContext) {
     revealCommand,
     copyAddressCommand,
     switchViewModeCommand,
+    showGraphCommand,
     fileCollector,
     watcher,
     treeDataProvider,
-    statusBar
+    statusBar,
+    graphWebview
   );
 
   // Listen for configuration changes

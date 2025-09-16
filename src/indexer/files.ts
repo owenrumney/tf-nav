@@ -71,7 +71,7 @@ export class TerraformFileCollector {
     allFiles.sort();
 
     this.outputChannel.appendLine(`Total Terraform files discovered: ${allFiles.length}`);
-    this.outputChannel.show(true);
+    this.outputChannel.hide();
 
     return allFiles;
   }

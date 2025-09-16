@@ -5,6 +5,7 @@
 import * as fs from 'fs';
 import { Address, ProjectIndex, ParseResult, ParserConfig } from '../types';
 import { TerraformParserFactory } from './parser';
+import { extractReferenceEdges } from '../graph/refs';
 
 /**
  * Options for building the project index
@@ -167,6 +168,9 @@ export async function buildIndex(files: string[], options: BuildIndexOptions = {
   // Build organized maps with sorting
   buildOrganizedMaps(result.index);
   
+  // Extract reference edges for dependency graph
+  result.index.refs = extractReferenceEdges(result.index);
+  
   // Calculate final timing
   const buildEndMs = performance.now();
   const buildEndTime = new Date();
@@ -182,6 +186,7 @@ export async function buildIndex(files: string[], options: BuildIndexOptions = {
     console.log(`Index built: ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`);
     console.log('Block type distribution:', Object.fromEntries(result.stats.blockTypeCounts));
     console.log(`Build time: ${result.stats.buildTimeMs}ms`);
+    console.log(`Reference edges: ${result.index.refs?.length || 0}`);
   }
 
   return result;

@@ -2,13 +2,18 @@
   "name": "tf-nav",
   "displayName": "tf-nav (Terraform Navigator)",
   "description": "Navigate Terraform configurations with a structured tree view",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "owenrumney",
+  "icon": "./media/logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/owenrumney/tf-nav"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
-    "Other"
+    "Other", "Visualization"
   ],
   "keywords": [
     "terraform",
@@ -63,6 +68,12 @@
         "title": "Switch View Mode",
         "category": "Terraform Navigator",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "tfnav.showGraph",
+        "title": "Show Dependency Graph",
+        "category": "Terraform Navigator",
+        "icon": "$(circuit-board)"
       }
     ],
     "menus": {
@@ -76,6 +87,11 @@
           "command": "tfnav.switchViewMode",
           "when": "view == tfnavTree",
           "group": "navigation"
+        },
+        {
+          "command": "tfnav.showGraph",
+          "when": "view == tfnavTree",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -86,6 +102,11 @@
         },
         {
           "command": "tfnav.copyAddress",
+          "when": "view == tfnavTree",
+          "group": "navigation"
+        },
+        {
+          "command": "tfnav.showGraph",
           "when": "view == tfnavTree",
           "group": "navigation"
         }

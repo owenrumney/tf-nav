@@ -41,13 +41,23 @@ export interface Address {
  */
 export interface Edge {
   /** Source terraform address */
-  from: string;
+  from: Address;
   
   /** Target terraform address */
-  to: string;
+  to: Address;
   
-  /** Attribute that caused the reference (optional) */
-  attr?: string;
+  /** Type of edge relationship */
+  type: 'reference' | 'dependency' | 'module_call';
+  
+  /** Additional metadata about the relationship */
+  attributes?: {
+    /** Type of reference (resource, data, module, var, local) */
+    referenceType?: string;
+    /** Specific attribute being referenced */
+    attribute?: string;
+    /** Additional edge metadata */
+    [key: string]: any;
+  };
 }
 
 /**
