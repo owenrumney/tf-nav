@@ -3,8 +3,9 @@
  */
 
 import * as vscode from 'vscode';
-import { ProjectIndex } from '../types';
+
 import { TerraformParserFactory } from '../indexer/parser';
+import { ProjectIndex } from '../types';
 
 export interface IndexStats {
   blockCount: number;
@@ -50,7 +51,7 @@ export class TerraformStatusBar {
       fileCount: index.byFile.size,
       typeCount: index.byType.size,
       buildTimeMs,
-      lastUpdate: new Date()
+      lastUpdate: new Date(),
     };
     this.updateDisplay();
   }
@@ -76,12 +77,13 @@ export class TerraformStatusBar {
 
     if (!this.currentStats) {
       this.statusBarItem.text = '$(warning) tf-nav: No index';
-      this.statusBarItem.tooltip = 'No Terraform index available. Click to refresh.';
+      this.statusBarItem.tooltip =
+        'No Terraform index available. Click to refresh.';
       return;
     }
 
     const stats = this.currentStats;
-    
+
     // Format build time
     let timeDisplay: string;
     if (stats.buildTimeMs < 1000) {
@@ -92,11 +94,11 @@ export class TerraformStatusBar {
 
     // Main status text
     this.statusBarItem.text = `$(database) TF: ${stats.blockCount} blocks in ${timeDisplay}`;
-    
+
     // Get cache stats
     const cacheStats = TerraformParserFactory.getCacheStats();
     const cacheHitRate = (cacheStats.hitRate * 100).toFixed(1);
-    
+
     // Detailed tooltip
     const lastUpdateStr = stats.lastUpdate.toLocaleTimeString();
     this.statusBarItem.tooltip = [
@@ -114,7 +116,7 @@ export class TerraformStatusBar {
       `📈 Hits: ${cacheStats.totalHits}`,
       `📉 Misses: ${cacheStats.totalMisses}`,
       '',
-      'Click to refresh index'
+      'Click to refresh index',
     ].join('\n');
   }
 

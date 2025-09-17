@@ -1,23 +1,33 @@
 // Tests for buildIndex functionality
-import { buildIndex, getBlockTypeCounts, getFileBlockCounts, createIndexSummary, findBlocks } from '../../src/indexer/buildIndex';
+import {
+  buildIndex,
+  getBlockTypeCounts,
+  getFileBlockCounts,
+  createIndexSummary,
+  findBlocks,
+} from '../../src/indexer/buildIndex';
 import { createTestWorkspaceHelper } from '../test-utils';
 import * as path from 'path';
 
 describe('buildIndex', () => {
   const testWorkspace = createTestWorkspaceHelper();
-  
+
   beforeAll(() => {
     const validation = testWorkspace.validateWorkspace();
     if (!validation.isValid) {
-      throw new Error(`Test workspace validation failed: ${validation.errors.join(', ')}`);
+      throw new Error(
+        `Test workspace validation failed: ${validation.errors.join(', ')}`
+      );
     }
   });
 
   describe('buildIndex function', () => {
     it('should build index from test workspace files', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles, { verbose: false });
 
@@ -33,13 +43,17 @@ describe('buildIndex', () => {
       expect(result.index.byType.size).toBeGreaterThan(0);
       expect(result.index.byFile.size).toBeGreaterThan(0);
 
-      console.log(`Built index with ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`);
+      console.log(
+        `Built index with ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`
+      );
     });
 
     it('should build index and report counts by block type', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles);
 
@@ -58,7 +72,7 @@ describe('buildIndex', () => {
       // Verify counts match byType map
       const byTypeFromIndex = getBlockTypeCounts(result.index);
       expect(byTypeFromIndex.size).toBe(blockTypeCounts.size);
-      
+
       for (const [blockType, count] of blockTypeCounts.entries()) {
         expect(byTypeFromIndex.get(blockType)).toBe(count);
       }
@@ -67,9 +81,11 @@ describe('buildIndex', () => {
     });
 
     it('should build index and report counts by file', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles);
 
@@ -86,22 +102,28 @@ describe('buildIndex', () => {
       // Verify counts match byFile map
       const byFileFromIndex = getFileBlockCounts(result.index);
       expect(byFileFromIndex.size).toBe(fileBlockCounts.size);
-      
+
       for (const [filePath, count] of fileBlockCounts.entries()) {
         expect(byFileFromIndex.get(filePath)).toBe(count);
       }
 
-      console.log('File block counts:', Object.fromEntries(
-        Array.from(fileBlockCounts.entries()).map(([path, count]) => [
-          path.split('/').pop(), count
-        ])
-      ));
+      console.log(
+        'File block counts:',
+        Object.fromEntries(
+          Array.from(fileBlockCounts.entries()).map(([path, count]) => [
+            path.split('/').pop(),
+            count,
+          ])
+        )
+      );
     });
 
     it('should sort blocks by resource name in byType map', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles);
 
@@ -114,10 +136,10 @@ describe('buildIndex', () => {
       for (let i = 1; i < resources!.length; i++) {
         const prev = resources![i - 1];
         const current = resources![i];
-        
+
         const prevName = prev.name || '';
         const currentName = current.name || '';
-        
+
         // Names should be in alphabetical order
         expect(prevName.localeCompare(currentName)).toBeLessThanOrEqual(0);
       }
@@ -131,18 +153,20 @@ describe('buildIndex', () => {
       for (let i = 1; i < variables!.length; i++) {
         const prev = variables![i - 1];
         const current = variables![i];
-        
+
         const prevName = prev.name || '';
         const currentName = current.name || '';
-        
+
         expect(prevName.localeCompare(currentName)).toBeLessThanOrEqual(0);
       }
     });
 
     it('should sort blocks by range in byFile map', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles);
 
@@ -153,10 +177,10 @@ describe('buildIndex', () => {
           for (let i = 1; i < blocks.length; i++) {
             const prev = blocks[i - 1];
             const current = blocks[i];
-            
+
             // Start positions should be in ascending order
             expect(prev.range.start).toBeLessThanOrEqual(current.range.start);
-            
+
             // If start positions are equal, end positions should be in ascending order
             if (prev.range.start === current.range.start) {
               expect(prev.range.end).toBeLessThanOrEqual(current.range.end);
@@ -169,7 +193,7 @@ describe('buildIndex', () => {
     it('should handle parsing errors gracefully', async () => {
       // Create a fake file path that doesn't exist
       const invalidFiles = [
-        path.join(testWorkspace.workspace, 'nonexistent.tf')
+        path.join(testWorkspace.workspace, 'nonexistent.tf'),
       ];
 
       const result = await buildIndex(invalidFiles, { continueOnError: true });
@@ -180,9 +204,11 @@ describe('buildIndex', () => {
     });
 
     it('should respect maxFiles option', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const maxFiles = 3;
       const result = await buildIndex(terraformFiles, { maxFiles });
@@ -192,9 +218,11 @@ describe('buildIndex', () => {
     });
 
     it('should build complete ProjectIndex structure', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles);
       const index = result.index;
@@ -225,22 +253,24 @@ describe('buildIndex', () => {
     let testIndex: any;
 
     beforeAll(async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
       const result = await buildIndex(terraformFiles);
       testIndex = result.index;
     });
 
     it('should create meaningful index summary', () => {
       const summary = createIndexSummary(testIndex);
-      
+
       expect(summary).toContain('Total blocks:');
       expect(summary).toContain('Blocks by type:');
       expect(summary).toContain('Blocks by file:');
       expect(summary).toContain('resource:');
       expect(summary).toContain('variable:');
-      
+
       console.log('Index Summary:');
       console.log(summary);
     });
@@ -249,22 +279,22 @@ describe('buildIndex', () => {
       // Find all resources
       const resources = findBlocks(testIndex, { blockType: 'resource' });
       expect(resources.length).toBeGreaterThan(0);
-      resources.forEach(block => expect(block.blockType).toBe('resource'));
+      resources.forEach((block) => expect(block.blockType).toBe('resource'));
 
       // Find AWS resources
       const awsResources = findBlocks(testIndex, { provider: 'aws' });
       expect(awsResources.length).toBeGreaterThan(0);
-      awsResources.forEach(block => expect(block.provider).toBe('aws'));
+      awsResources.forEach((block) => expect(block.provider).toBe('aws'));
 
       // Find specific resource type
       const vpcResources = findBlocks(testIndex, { kind: 'aws_vpc' });
       expect(vpcResources.length).toBeGreaterThan(0);
-      vpcResources.forEach(block => expect(block.kind).toBe('aws_vpc'));
+      vpcResources.forEach((block) => expect(block.kind).toBe('aws_vpc'));
 
       // Find by name
       const namedBlocks = findBlocks(testIndex, { name: 'main' });
       expect(namedBlocks.length).toBeGreaterThan(0);
-      namedBlocks.forEach(block => expect(block.name).toBe('main'));
+      namedBlocks.forEach((block) => expect(block.name).toBe('main'));
     });
 
     it('should handle empty search criteria', () => {
@@ -280,21 +310,23 @@ describe('buildIndex', () => {
 
   describe('comprehensive index validation', () => {
     it('should build index with expected block distribution', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles, { verbose: true });
 
       // Validate expected minimum counts based on test workspace
       const typeCounts = result.stats.blockTypeCounts;
-      
+
       expect(typeCounts.get('resource') || 0).toBeGreaterThan(5); // main.tf + modules
       expect(typeCounts.get('variable') || 0).toBeGreaterThan(8); // variables.tf + modules + s3.tf.json
-      expect(typeCounts.get('output') || 0).toBeGreaterThan(4);   // outputs.tf + modules
-      expect(typeCounts.get('data') || 0).toBeGreaterThan(3);     // data.tf + modules
-      expect(typeCounts.get('module') || 0).toBeGreaterThan(1);   // main.tf modules
-      expect(typeCounts.get('locals') || 0).toBeGreaterThan(0);   // locals.tf
+      expect(typeCounts.get('output') || 0).toBeGreaterThan(4); // outputs.tf + modules
+      expect(typeCounts.get('data') || 0).toBeGreaterThan(3); // data.tf + modules
+      expect(typeCounts.get('module') || 0).toBeGreaterThan(1); // main.tf modules
+      expect(typeCounts.get('locals') || 0).toBeGreaterThan(0); // locals.tf
 
       // Validate no errors for valid files
       expect(result.stats.filesWithErrors).toBe(0);
@@ -305,24 +337,30 @@ describe('buildIndex', () => {
       console.log(`Files processed: ${result.stats.filesProcessed}`);
       console.log(`Total blocks: ${result.stats.totalBlocks}`);
       console.log('\nBlock type distribution:');
-      
-      for (const [blockType, count] of Array.from(typeCounts.entries()).sort()) {
+
+      for (const [blockType, count] of Array.from(
+        typeCounts.entries()
+      ).sort()) {
         console.log(`  ${blockType}: ${count}`);
       }
-      
+
       console.log('\nFile distribution:');
-      for (const [filePath, count] of Array.from(result.stats.blockFilesCounts.entries()).sort()) {
+      for (const [filePath, count] of Array.from(
+        result.stats.blockFilesCounts.entries()
+      ).sort()) {
         const fileName = filePath.split('/').pop();
         console.log(`  ${fileName}: ${count}`);
       }
-      
+
       console.log('\n=== END REPORT ===\n');
     });
 
     it('should maintain referential integrity between maps', async () => {
-      const terraformFiles = testWorkspace.getExpectedTerraformFiles().map(
-        relativePath => path.join(testWorkspace.workspace, relativePath)
-      );
+      const terraformFiles = testWorkspace
+        .getExpectedTerraformFiles()
+        .map((relativePath) =>
+          path.join(testWorkspace.workspace, relativePath)
+        );
 
       const result = await buildIndex(terraformFiles);
       const index = result.index;

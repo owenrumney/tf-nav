@@ -21,8 +21,9 @@ tests/
 The tests use a comprehensive test workspace located at `test/workspace/` that includes:
 
 ### Terraform Files (13 total)
+
 - `main.tf` - Main infrastructure resources
-- `variables.tf` - Variable definitions  
+- `variables.tf` - Variable definitions
 - `data.tf` - Data source definitions
 - `locals.tf` - Local value definitions
 - `outputs.tf` - Output definitions
@@ -36,6 +37,7 @@ The tests use a comprehensive test workspace located at `test/workspace/` that i
 - `modules/cloudwatch/data.tf` - CloudWatch module data sources
 
 ### Ignored Files (6 total)
+
 - `.terraform/terraform.tfstate` - Terraform state file
 - `.terraform/providers/...` - Provider binaries
 - `.terraform/modules/modules.json` - Module metadata
@@ -65,6 +67,7 @@ npm test -- --testNamePattern="should discover all expected Terraform files"
 ## Test Categories
 
 ### 1. File Discovery Tests (`indexer/files.test.ts`)
+
 - Tests the `TerraformFileCollector` class
 - Validates file discovery across the test workspace
 - Tests ignore pattern functionality
@@ -73,12 +76,14 @@ npm test -- --testNamePattern="should discover all expected Terraform files"
 - Error handling scenarios
 
 ### 2. Extension Integration Tests (`extension.test.ts`)
+
 - Tests VS Code API integration
 - Configuration handling
 - Error scenarios
 - Extension lifecycle
 
 ### 3. Workspace Validation Tests (`workspace-validation.test.ts`)
+
 - Ensures test workspace is properly structured
 - Validates all expected files are present
 - Confirms file classification logic
@@ -95,7 +100,7 @@ The tests use comprehensive VS Code API mocking:
 ## Adding New Tests
 
 1. **File Discovery Tests**: Add to `indexer/files.test.ts`
-2. **Extension Tests**: Add to `extension.test.ts` 
+2. **Extension Tests**: Add to `extension.test.ts`
 3. **New Test Categories**: Create new files following the naming pattern `*.test.ts`
 
 ### Test Utilities
@@ -119,6 +124,7 @@ const expectedFiles = testWorkspace.getExpectedTerraformFiles();
 ## Coverage
 
 Run `npm run test:coverage` to generate coverage reports:
+
 - HTML report: `coverage/lcov-report/index.html`
 - Text summary in terminal
 - LCOV format for CI integration

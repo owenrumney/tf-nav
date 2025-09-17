@@ -1,5 +1,6 @@
-import * as vscode from 'vscode';
 import * as path from 'path';
+
+import * as vscode from 'vscode';
 
 /**
  * File discovery service for Terraform files
@@ -8,7 +9,9 @@ export class TerraformFileCollector {
   private readonly outputChannel: vscode.OutputChannel;
 
   constructor() {
-    this.outputChannel = vscode.window.createOutputChannel('Terraform Navigator');
+    this.outputChannel = vscode.window.createOutputChannel(
+      'Terraform Navigator'
+    );
   }
 
   /**
@@ -23,10 +26,30 @@ export class TerraformFileCollector {
     }
 
     const config = vscode.workspace.getConfiguration('tfnav');
-    const ignorePatterns = config.get<string[]>('ignore', ['**/.terraform/**']);
+    const configuredIgnorePatterns = config.get<string[]>('ignore', ['**/.terraform/**']);
+    const includeTerraformCache = config.get<boolean>('includeTerraformCache', false);
     
+    // If includeTerraformCache is false, ensure .terraform is in ignore patterns
+    let ignorePatterns = [...configuredIgnorePatterns];
+    if (!includeTerraformCache) {
+      // Add .terraform patterns if not already present
+      const terraformPatterns = ['**/.terraform/**', '**/.terraform/*'];
+      for (const pattern of terraformPatterns) {
+        if (!ignorePatterns.includes(pattern)) {
+          ignorePatterns.push(pattern);
+        }
+      }
+    } else {
+      // If includeTerraformCache is true, remove .terraform patterns from ignore list
+      ignorePatterns = ignorePatterns.filter(pattern => 
+        !pattern.includes('.terraform')
+      );
+    }
+
     this.outputChannel.appendLine('Starting Terraform file discovery...');
-    this.outputChannel.appendLine(`Ignore patterns: ${JSON.stringify(ignorePatterns)}`);
+    this.outputChannel.appendLine(
+      `Ignore patterns: ${JSON.stringify(ignorePatterns)}`
+    );
 
     const allFiles: string[] = [];
 
@@ -49,28 +72,33 @@ export class TerraformFileCollector {
 
         // Convert URIs to absolute paths and combine
         const workspaceFiles = [
-          ...tfFiles.map(uri => uri.fsPath),
-          ...tfJsonFiles.map(uri => uri.fsPath)
+          ...tfFiles.map((uri) => uri.fsPath),
+          ...tfJsonFiles.map((uri) => uri.fsPath),
         ];
 
         allFiles.push(...workspaceFiles);
-        this.outputChannel.appendLine(`Found ${workspaceFiles.length} Terraform files in ${workspaceFolder.name}`);
-        
+        this.outputChannel.appendLine(
+          `Found ${workspaceFiles.length} Terraform files in ${workspaceFolder.name}`
+        );
+
         // Log each file for debugging
-        workspaceFiles.forEach(file => {
+        workspaceFiles.forEach((file) => {
           const relativePath = path.relative(workspacePath, file);
           this.outputChannel.appendLine(`  - ${relativePath}`);
         });
-
       } catch (error) {
-        this.outputChannel.appendLine(`Error scanning workspace ${workspaceFolder.name}: ${error}`);
+        this.outputChannel.appendLine(
+          `Error scanning workspace ${workspaceFolder.name}: ${error}`
+        );
       }
     }
 
     // Sort files for consistent ordering
     allFiles.sort();
 
-    this.outputChannel.appendLine(`Total Terraform files discovered: ${allFiles.length}`);
+    this.outputChannel.appendLine(
+      `Total Terraform files discovered: ${allFiles.length}`
+    );
     this.outputChannel.hide();
 
     return allFiles;
@@ -91,10 +119,13 @@ export class TerraformFileCollector {
   /**
    * Check if a file path should be ignored based on ignore patterns
    */
-  private shouldIgnoreFile(filePath: string, ignorePatterns: string[]): boolean {
+  private shouldIgnoreFile(
+    filePath: string,
+    ignorePatterns: string[]
+  ): boolean {
     const normalizedPath = filePath.replace(/\\/g, '/');
-    
-    return ignorePatterns.some(pattern => {
+
+    return ignorePatterns.some((pattern) => {
       // Simple glob matching for common patterns
       if (pattern.includes('**')) {
         const regexPattern = pattern

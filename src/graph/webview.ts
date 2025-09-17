@@ -1,17 +1,31 @@
+ 
 /**
  * Webview panel for Terraform dependency graph visualization
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 import * as vscode from 'vscode';
+
 import { Address, Edge, ProjectIndex } from '../types';
-import { getNeighbors, getNeighborsWithDepth, getEdgesForAddress } from './refs';
+
+import { getNeighborsWithDepth } from './refs';
+
+/**
+ * Message data types for webview communication
+ */
+interface MessageData {
+  address?: Address;
+  depth?: number;
+}
 
 /**
  * Message types for webview communication
  */
 interface WebviewMessage {
-  type: 'ready' | 'nodeClick' | 'reveal' | 'refresh' | 'copyAddress' | 'focus' | 'back' | 'forward';
-  data?: any;
+  type: 'ready' | 'nodeClick' | 'reveal' | 'refresh' | 'copyAddress' | 'focus' | 'back' | 'forward' | 'depthChange';
+  data?: MessageData;
 }
 
 /**
@@ -49,6 +63,7 @@ export class TerraformGraphWebview {
   private currentIndex: ProjectIndex | null = null;
   private currentFocus: Address | null = null;
   private workspaceRoot: string | null = null;
+  private currentDepth: number = 5; // Default depth
   
   // Navigation history
   private navigationHistory: (Address | null)[] = [];
@@ -83,11 +98,10 @@ export class TerraformGraphWebview {
     this.currentIndex = index;
     this.currentFocus = focusAddress || null;
 
+    // Always dispose existing panel to ensure fresh HTML content
     if (this.panel) {
-      // Panel already exists, just reveal it in current column
-      this.panel.reveal(vscode.ViewColumn.Active);
-      this.updateGraph();
-      return;
+      this.panel.dispose();
+      this.panel = null;
     }
 
     // Create new webview panel in current column as singleton
@@ -157,7 +171,6 @@ export class TerraformGraphWebview {
     const nodes: GraphData['nodes'] = [];
     const edges: GraphData['edges'] = [];
     const addedNodes = new Set<string>();
-    const usedClusters = new Set<string>();
 
     // If no focus is set, show a sample of the graph
     if (!this.currentFocus) {
@@ -196,11 +209,11 @@ export class TerraformGraphWebview {
       console.log(`[GraphWebview] Added ${edges.length} sample edges`);
       
     } else {
-      // Show focus node and its immediate neighbors
+      // Show focus node and its neighbors with current depth
       const focusNodeId = this.getNodeId(this.currentFocus);
       
-      // Get all nodes we'll be displaying (focus + neighbors)
-      const neighbors = getNeighborsWithDepth(this.currentFocus, this.currentIndex.refs, 2);
+      // Get all nodes we'll be displaying (focus + neighbors) using current depth
+      const neighbors = getNeighborsWithDepth(this.currentFocus, this.currentIndex.refs, this.currentDepth);
       
       // Add focus node
       nodes.push(this.createNode(this.currentFocus, true));
@@ -226,7 +239,7 @@ export class TerraformGraphWebview {
         }
       }
       
-      console.log(`[GraphWebview] Focus mode: added ${neighbors.length} neighbors and ${edges.length} edges`);
+      console.log(`[GraphWebview] Focus mode (depth ${this.currentDepth}): added ${neighbors.length} neighbors and ${edges.length} edges`);
     }
 
     return { nodes, edges };
@@ -244,22 +257,22 @@ export class TerraformGraphWebview {
     
     switch (address.blockType) {
       case 'resource':
-        parts.push(`${address.kind}.${address.name}`);
+        parts.push(`${address.kind || 'unknown'}.${address.name || 'unknown'}`);
         break;
       case 'data':
-        parts.push(`data.${address.kind}.${address.name}`);
+        parts.push(`data.${address.kind || 'unknown'}.${address.name || 'unknown'}`);
         break;
       case 'module':
-        parts.push(`module.${address.name}`);
+        parts.push(`module.${address.name || 'unknown'}`);
         break;
       case 'variable':
-        parts.push(`var.${address.name}`);
+        parts.push(`var.${address.name || 'unknown'}`);
         break;
       case 'output':
-        parts.push(`output.${address.name}`);
+        parts.push(`output.${address.name || 'unknown'}`);
         break;
       case 'locals':
-        parts.push(`local.${address.name}`);
+        parts.push(`local.${address.name || 'unknown'}`);
         break;
     }
     
@@ -330,28 +343,30 @@ export class TerraformGraphWebview {
     let color = '#666';
 
     switch (address.blockType) {
-      case 'resource':
-        const resourceInfo = this.getProviderInfo(address.kind);
-        label = `${resourceInfo.shortType || 'resource'}.${address.name}`;
+      case 'resource': {
+        const resourceInfo = this.getProviderInfo(address.kind || undefined);
+        label = `${address.kind || 'resource'}.${address.name || 'unknown'}`;
         // Use provider color if available, otherwise default to blue
         color = isFocus ? '#e74c3c' : (resourceInfo.color || '#3498db');
         break;
-      case 'data':
-        const dataInfo = this.getProviderInfo(address.kind);
-        label = `${dataInfo.shortType || 'data'}.${address.name}`;
+      }
+      case 'data': {
+        const dataInfo = this.getProviderInfo(address.kind || undefined);
+        label = `${address.kind || 'data'}.${address.name || 'unknown'}`;
         // Use provider color if available, otherwise default to orange
         color = isFocus ? '#e67e22' : (dataInfo.color || '#f39c12');
         break;
+      }
       case 'module':
-        label = `${address.name}`;
+        label = `${address.name || 'unknown'}`;
         color = isFocus ? '#8e44ad' : '#9b59b6'; // Purple for modules
         break;
       case 'variable':
-        label = `${address.name}`; // Clean variable name
+        label = `${address.name || 'unknown'}`; // Clean variable name
         color = isFocus ? '#27ae60' : '#2ecc71'; // Green for variables
         break;
       case 'output':
-        label = `${address.name}`;
+        label = `${address.name || 'unknown'}`;
         color = isFocus ? '#16a085' : '#1abc9c'; // Teal for outputs
         break;
       case 'locals':
@@ -360,7 +375,7 @@ export class TerraformGraphWebview {
         color = isFocus ? '#c0392b' : '#e74c3c'; // Red for locals
         break;
       default:
-        label = address.name || address.blockType;
+        label = (address.name || address.blockType || 'unknown');
         color = isFocus ? '#34495e' : '#95a5a6'; // Gray for unknown
     }
 
@@ -549,6 +564,23 @@ export class TerraformGraphWebview {
         // Navigate forward in history
         this.navigateForward();
         break;
+
+      case 'depthChange':
+        // Change the depth setting
+        if (message.data && typeof message.data.depth === 'number') {
+          this.currentDepth = message.data.depth;
+          console.log(`[GraphWebview] Depth changed to: ${this.currentDepth}`);
+          this.updateGraph(); // Refresh graph with new depth
+          
+          // Send confirmation back to webview
+          if (this.panel) {
+            this.panel.webview.postMessage({
+              type: 'depthChange',
+              data: { depth: this.currentDepth }
+            });
+          }
+        }
+        break;
     }
   }
 
@@ -682,595 +714,16 @@ export class TerraformGraphWebview {
    * Generate HTML content for the webview
    */
   private getWebviewContent(): string {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terraform Dependency Graph</title>
-    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: var(--vscode-editor-background);
-            color: var(--vscode-editor-foreground);
-        }
-        
-        #toolbar {
-            padding: 10px;
-            background-color: var(--vscode-editor-background);
-            border-bottom: 1px solid var(--vscode-panel-border);
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        
-        button {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            padding: 6px 12px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        button:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        
-        button:disabled {
-            background-color: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        button:disabled:hover {
-            background-color: var(--vscode-button-secondaryBackground);
-        }
-        
-        #cy {
-            width: 100%;
-            height: calc(100vh - 60px);
-            background-color: var(--vscode-editor-background);
-        }
-        
-        .info {
-            position: absolute;
-            top: 70px;
-            right: 10px;
-            background-color: var(--vscode-editor-background);
-            border: 1px solid var(--vscode-panel-border);
-            border-radius: 4px;
-            padding: 10px;
-            max-width: 250px;
-            font-size: 12px;
-            z-index: 1000;
-        }
-        
-        .info h3 {
-            margin: 0 0 8px 0;
-            font-size: 14px;
-        }
-        
-        .info p {
-            margin: 4px 0;
-        }
-        
-        /* Context menu styling */
-        #context-menu {
-            position: absolute;
-            background: var(--vscode-menu-background);
-            border: 1px solid var(--vscode-menu-border);
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 2000;
-            min-width: 180px;
-            font-size: 13px;
-            padding: 4px 0;
-        }
-        
-        .context-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 12px;
-            cursor: pointer;
-            color: var(--vscode-menu-foreground);
-            transition: background-color 0.1s;
-        }
-        
-        .context-item:hover {
-            background-color: var(--vscode-menu-selectionBackground);
-            color: var(--vscode-menu-selectionForeground);
-        }
-        
-        .context-item .shortcut {
-            font-size: 11px;
-            opacity: 0.7;
-            font-family: monospace;
-        }
-    </style>
-</head>
-<body>
-    <div id="toolbar">
-        <button id="backBtn" onclick="navigateBack()" disabled>⬅️ Back</button>
-        <button id="forwardBtn" onclick="navigateForward()" disabled>➡️ Forward</button>
-        <div style="width: 1px; height: 20px; background-color: var(--vscode-panel-border); margin: 0 5px;"></div>
-        <button onclick="refreshGraph()">🔄 Refresh</button>
-        <button onclick="fitGraph()">🔍 Fit</button>
-        <button onclick="resetLayout()">📐 Layout</button>
-        <span style="margin-left: auto; font-size: 12px; opacity: 0.7;">
-            Click to select • Right-click for menu • Enter to reveal • Ctrl+C to copy
-        </span>
-    </div>
-    
-    <div id="cy"></div>
-    
-    <div id="info" class="info" style="display: none;">
-        <h3 id="info-title">Node Info</h3>
-        <p><strong>Type:</strong> <span id="info-type"></span></p>
-        <p><strong>File:</strong> <span id="info-file"></span></p>
-        <p><strong>Module:</strong> <span id="info-module"></span></p>
-    </div>
-
-    <script>
-        const vscode = acquireVsCodeApi();
-        let cy;
-        
-        // Smart cluster positioning with improved anti-overlap
-        const nodePositions = new Map();
-        const minDistance = 120; // Increased minimum distance between nodes for better readability
-        
-        function getClusterPosition(node) {
-            const cluster = node.data('cluster');
-            const nodeId = node.data('id');
-            
-            // If position already calculated, return it
-            if (nodePositions.has(nodeId)) {
-                return nodePositions.get(nodeId);
-            }
-            
-            // Define cluster centers with better spacing
-            const clusterCenters = {
-                'variable': { x: -300, y: -200 },
-                'resource': { x: 300, y: -200 },
-                'data': { x: 300, y: 200 },
-                'module': { x: -300, y: 200 },
-                'locals': { x: 0, y: -300 },
-                'output': { x: 0, y: 300 }
-            };
-            
-            const center = clusterCenters[cluster] || { x: 0, y: 0 };
-            const maxAttempts = 100; // More attempts for better positioning
-            
-            let position;
-            let attempts = 0;
-            
-            do {
-                // Try positions in expanding rings around cluster center
-                const ring = Math.floor(attempts / 12); // 12 positions per ring for better distribution
-                const angleStep = (2 * Math.PI) / 12;
-                const angle = (attempts % 12) * angleStep;
-                const distance = ring * 60 + 40; // Larger ring steps and base distance
-                
-                position = {
-                    x: center.x + Math.cos(angle) * distance,
-                    y: center.y + Math.sin(angle) * distance
-                };
-                
-                attempts++;
-                
-                // Check if this position conflicts with existing nodes
-                if (attempts >= maxAttempts || !hasOverlap(position, nodePositions, minDistance)) {
-                    break;
-                }
-            } while (attempts < maxAttempts);
-            
-            // Store the calculated position
-            nodePositions.set(nodeId, position);
-            return position;
-        }
-        
-        function hasOverlap(newPos, existingPositions, minDist) {
-            for (const [nodeId, pos] of existingPositions) {
-                const dx = newPos.x - pos.x;
-                const dy = newPos.y - pos.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance < minDist) {
-                    return true; // Overlap detected
-                }
-            }
-            return false; // No overlap
-        }
-        
-        function clearPositionCache() {
-            nodePositions.clear();
-        }
-
-        // Initialize Cytoscape
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('[Webview] Initializing Cytoscape...');
-            console.log('[Webview] cytoscape available:', typeof window.cytoscape !== 'undefined');
-            
-            if (typeof window.cytoscape === 'undefined') {
-                console.error('[Webview] Cytoscape not loaded!');
-                return;
-            }
-            
-            cy = cytoscape({
-                container: document.getElementById('cy'),
-                
-                style: [
-                    {
-                        selector: 'node',
-                        style: {
-                            'background-color': 'transparent',
-                            'label': 'data(label)',
-                            'text-valign': 'center',
-                            'text-halign': 'center',
-                            'font-size': '11px',
-                            'font-weight': 500,
-                            'font-family': 'system-ui, -apple-system, sans-serif',
-                            'color': 'data(color)',
-                            'text-wrap': 'wrap',
-                            'text-max-width': '120px',
-                            'width': 'label',
-                            'height': 'label',
-                            'padding': '4px',
-                            'shape': 'rectangle',
-                            'border-width': 0
-                        }
-                    },
-                    {
-                        selector: 'node:hover',
-                        style: {
-                            'transform': 'scale(1.1)'
-                        }
-                    },
-                    {
-                        selector: 'node.selected',
-                        style: {
-                            'border-width': 2,
-                            'border-color': '#007acc',
-                            'border-style': 'solid'
-                        }
-                    },
-                    {
-                        selector: 'edge',
-                        style: {
-                            'width': 2,
-                            'line-color': 'rgba(150,150,150,0.8)',
-                            'target-arrow-color': 'rgba(150,150,150,0.8)',
-                            'target-arrow-shape': 'triangle',
-                            'target-arrow-size': '8px',
-                            'curve-style': 'bezier',
-                            'control-point-step-size': 40,
-                            'label': 'data(label)',
-                            'font-size': '9px',
-                            'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            'text-rotation': 'autorotate',
-                            'text-margin-y': -8,
-                            'text-background-color': 'rgba(255,255,255,0.9)',
-                            'text-background-padding': '2px',
-                            'text-background-shape': 'roundrectangle',
-                            'color': '#555'
-                        }
-                    },
-                    {
-                        selector: 'edge:hover',
-                        style: {
-                            'width': 3,
-                            'line-color': 'rgba(100,100,100,1)',
-                            'target-arrow-color': 'rgba(100,100,100,1)'
-                        }
-                    },
-                    {
-                        selector: 'node:selected',
-                        style: {
-                            'border-width': 2,
-                            'border-color': '#007acc',
-                            'border-style': 'solid',
-                            'transform': 'scale(1.15)'
-                        }
-                    }
-                ],
-                
-                layout: {
-                    name: 'preset',
-                    positions: function(node) {
-                        return getClusterPosition(node);
-                    },
-                    fit: true,
-                    padding: 50
-                }
-            });
-            
-            // Event handlers
-            let selectedNode = null;
-            
-            cy.on('tap', 'node', function(evt) {
-                const node = evt.target;
-                const address = node.data('address');
-                
-                // Skip cluster nodes
-                if (node.data('type') === 'cluster') {
-                    return;
-                }
-                
-                // Update selection
-                cy.nodes().removeClass('selected');
-                node.addClass('selected');
-                selectedNode = node;
-                
-                // Show info panel
-                showNodeInfo(node);
-                
-                // Send click message to extension
-                vscode.postMessage({
-                    type: 'nodeClick',
-                    data: { address }
-                });
-            });
-            
-            // Right-click context menu
-            cy.on('cxttap', 'node', function(evt) {
-                const node = evt.target;
-                const address = node.data('address');
-                
-                // Skip cluster nodes
-                if (node.data('type') === 'cluster' || !address) {
-                    return;
-                }
-                
-                evt.preventDefault();
-                showContextMenu(evt.renderedPosition, address);
-            });
-            
-            // Keyboard shortcuts
-            document.addEventListener('keydown', function(evt) {
-                if (selectedNode && selectedNode.data('address')) {
-                    switch(evt.key) {
-                        case 'Enter':
-                        case ' ': // Spacebar
-                            evt.preventDefault();
-                            revealSelectedNode();
-                            break;
-                        case 'c':
-                            if (evt.ctrlKey || evt.metaKey) {
-                                evt.preventDefault();
-                                copySelectedNodeAddress();
-                            }
-                            break;
-                    }
-                }
-            });
-            
-            // Tell extension we're ready
-            vscode.postMessage({ type: 'ready' });
-        });
-        
-        // Handle messages from extension
-        window.addEventListener('message', event => {
-            const message = event.data;
-            
-            switch (message.type) {
-                case 'updateGraph':
-                    updateGraph(message.data);
-                    break;
-                    
-                case 'navigationState':
-                    updateNavigationButtons(message.data);
-                    break;
-            }
-        });
-        
-        function updateGraph(data) {
-            console.log('[Webview] Received graph data:', data);
-            console.log('[Webview] Nodes:', data.nodes?.length || 0);
-            console.log('[Webview] Edges:', data.edges?.length || 0);
-            
-            if (cy) {
-                // Clear position cache for fresh layout
-                clearPositionCache();
-                
-                const elements = [...(data.nodes || []), ...(data.edges || [])];
-                console.log('[Webview] Total elements:', elements.length);
-                
-                cy.json({ elements });
-                cy.layout({ 
-                    name: 'preset',
-                    positions: function(node) {
-                        return getClusterPosition(node);
-                    },
-                    fit: true,
-                    padding: 50
-                }).run();
-                
-                console.log('[Webview] Graph updated, node count:', cy.nodes().length);
-            } else {
-                console.error('[Webview] Cytoscape instance not available');
-            }
-        }
-        
-        function showNodeInfo(node) {
-            const address = node.data('address');
-            const info = document.getElementById('info');
-            
-            // Get provider info for resources and data sources
-            let providerText = '';
-            if (address.blockType === 'resource' || address.blockType === 'data') {
-                const kind = address.kind || '';
-                // Simple provider detection for display
-                if (kind.startsWith('aws_')) providerText = ' (AWS)';
-                else if (kind.startsWith('azure') || kind.startsWith('azurerm')) providerText = ' (Azure)';
-                else if (kind.startsWith('google_') || kind.startsWith('gcp_')) providerText = ' (GCP)';
-                else if (kind.startsWith('kubernetes_') || kind.startsWith('k8s_')) providerText = ' (K8s)';
-                else if (kind.startsWith('docker_')) providerText = ' (Docker)';
-                else if (kind.startsWith('github_')) providerText = ' (GitHub)';
-                else if (kind.startsWith('random_')) providerText = ' (Random)';
-            }
-            
-            document.getElementById('info-title').textContent = node.data('label').replace('\\n', ' ') + providerText;
-            document.getElementById('info-type').textContent = address.blockType + (address.kind ? ' (' + address.kind + ')' : '');
-            document.getElementById('info-file').textContent = node.data('relativePath') || address.file.split('/').pop();
-            document.getElementById('info-module').textContent = address.modulePath.join('.') || 'root';
-            
-            info.style.display = 'block';
-        }
-        
-        function refreshGraph() {
-            vscode.postMessage({ type: 'refresh' });
-        }
-        
-        function fitGraph() {
-            if (cy) {
-                cy.fit();
-            }
-        }
-        
-        function showContextMenu(position, address) {
-            hideContextMenu(); // Hide any existing menu
-            
-            const menu = document.createElement('div');
-            menu.id = 'context-menu';
-            menu.innerHTML = \`
-                <div class="context-item" onclick="revealNode()">
-                    <span>📍 Reveal in Editor</span>
-                    <span class="shortcut">Enter</span>
-                </div>
-                <div class="context-item" onclick="copyNodeAddress()">
-                    <span>📋 Copy Address</span>
-                    <span class="shortcut">Ctrl+C</span>
-                </div>
-                <div class="context-item" onclick="focusNode()">
-                    <span>🎯 Focus Dependencies</span>
-                </div>
-            \`;
-            
-            menu.style.left = position.x + 'px';
-            menu.style.top = position.y + 'px';
-            document.body.appendChild(menu);
-            
-            // Store address for context actions
-            menu.dataset.address = JSON.stringify(address);
-            
-            // Hide menu when clicking elsewhere
-            setTimeout(() => {
-                document.addEventListener('click', hideContextMenu, { once: true });
-            }, 10);
-        }
-        
-        function hideContextMenu() {
-            const menu = document.getElementById('context-menu');
-            if (menu) {
-                menu.remove();
-            }
-        }
-        
-        function revealNode() {
-            const menu = document.getElementById('context-menu');
-            if (menu && menu.dataset.address) {
-                const address = JSON.parse(menu.dataset.address);
-                vscode.postMessage({
-                    type: 'reveal',
-                    data: { address }
-                });
-                hideContextMenu();
-            }
-        }
-        
-        function copyNodeAddress() {
-            const menu = document.getElementById('context-menu');
-            if (menu && menu.dataset.address) {
-                const address = JSON.parse(menu.dataset.address);
-                vscode.postMessage({
-                    type: 'copyAddress',
-                    data: { address }
-                });
-                hideContextMenu();
-            }
-        }
-        
-        function focusNode() {
-            const menu = document.getElementById('context-menu');
-            if (menu && menu.dataset.address) {
-                const address = JSON.parse(menu.dataset.address);
-                vscode.postMessage({
-                    type: 'focus',
-                    data: { address }
-                });
-                hideContextMenu();
-            }
-        }
-        
-        function revealSelectedNode() {
-            if (selectedNode && selectedNode.data('address')) {
-                vscode.postMessage({
-                    type: 'reveal',
-                    data: { address: selectedNode.data('address') }
-                });
-            }
-        }
-        
-        function copySelectedNodeAddress() {
-            if (selectedNode && selectedNode.data('address')) {
-                vscode.postMessage({
-                    type: 'copyAddress',
-                    data: { address: selectedNode.data('address') }
-                });
-            }
-        }
-        
-        function resetLayout() {
-            if (cy) {
-                // Clear position cache for fresh layout
-                clearPositionCache();
-                
-                cy.layout({ 
-                    name: 'preset',
-                    positions: function(node) {
-                        return getClusterPosition(node);
-                    },
-                    fit: true,
-                    padding: 50
-                }).run();
-            }
-        }
-        
-        function navigateBack() {
-            vscode.postMessage({ type: 'back' });
-        }
-        
-        function navigateForward() {
-            vscode.postMessage({ type: 'forward' });
-        }
-        
-        function updateNavigationButtons(state) {
-            const backBtn = document.getElementById('backBtn');
-            const forwardBtn = document.getElementById('forwardBtn');
-            
-            if (backBtn) {
-                backBtn.disabled = !state.canGoBack;
-            }
-            if (forwardBtn) {
-                forwardBtn.disabled = !state.canGoForward;
-            }
-        }
-        
-        // Hide info panel when clicking elsewhere
-        document.addEventListener('click', function(e) {
-            if (!e.target.closest('#info') && !e.target.closest('#cy')) {
-                document.getElementById('info').style.display = 'none';
-            }
-        });
-    </script>
-</body>
-</html>`;
+    const htmlPath = path.join(__dirname, 'src', 'graph', 'webview.html');
+    console.log('[GraphWebview] Attempting to load webview.html from:', htmlPath);
+    try {
+      const html = fs.readFileSync(htmlPath, 'utf8');
+      console.log('[GraphWebview] Successfully loaded webview.html');
+      return html;
+    } catch (err) {
+      console.error('[GraphWebview] Failed to load webview.html:', err);
+      return `<html><body><h2>Error loading webview template</h2><pre>${err}</pre></body></html>`;
+    }
   }
 
   /**

@@ -63,6 +63,10 @@ const config = {
           from: 'resources',
           to: 'resources',
         },
+        {
+          from: 'src/graph/webview.html',
+          to: 'src/graph/webview.html',
+        },
       ],
     }),
   ],

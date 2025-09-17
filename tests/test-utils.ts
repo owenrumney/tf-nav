@@ -28,33 +28,36 @@ export class TestWorkspaceHelper {
    */
   getAllFiles(): TestFile[] {
     const files: TestFile[] = [];
-    
+
     const walkDir = (currentDir: string) => {
       if (!fs.existsSync(currentDir)) {
         return;
       }
 
       const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = path.join(currentDir, entry.name);
         const relativePath = path.relative(this.workspacePath, fullPath);
-        
+
         const testFile: TestFile = {
           path: fullPath,
           relativePath,
           isDirectory: entry.isDirectory(),
-          shouldBeDiscovered: this.shouldBeDiscovered(relativePath, entry.isDirectory()),
+          shouldBeDiscovered: this.shouldBeDiscovered(
+            relativePath,
+            entry.isDirectory()
+          ),
         };
-        
+
         files.push(testFile);
-        
+
         if (entry.isDirectory()) {
           walkDir(fullPath);
         }
       }
     };
-    
+
     walkDir(this.workspacePath);
     return files;
   }
@@ -97,17 +100,23 @@ export class TestWorkspaceHelper {
   /**
    * Determine if a file should be discovered based on ignore patterns
    */
-  private shouldBeDiscovered(relativePath: string, isDirectory: boolean): boolean {
+  private shouldBeDiscovered(
+    relativePath: string,
+    isDirectory: boolean
+  ): boolean {
     // Should be ignored if in .terraform directory
     if (relativePath.includes('.terraform')) {
       return false;
     }
-    
+
     // Should be discovered if it's a .tf or .tf.json file
-    if (!isDirectory && (relativePath.endsWith('.tf') || relativePath.endsWith('.tf.json'))) {
+    if (
+      !isDirectory &&
+      (relativePath.endsWith('.tf') || relativePath.endsWith('.tf.json'))
+    ) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -116,12 +125,12 @@ export class TestWorkspaceHelper {
    */
   validateWorkspace(): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (!fs.existsSync(this.workspacePath)) {
       errors.push(`Test workspace not found at: ${this.workspacePath}`);
       return { isValid: false, errors };
     }
-    
+
     // Check for key files
     const keyFiles = ['main.tf', 'variables.tf', 'modules/rds/main.tf'];
     for (const file of keyFiles) {
@@ -130,13 +139,15 @@ export class TestWorkspaceHelper {
         errors.push(`Key test file missing: ${file}`);
       }
     }
-    
+
     // Check for .terraform directory (should exist for ignore testing)
     const terraformDir = path.join(this.workspacePath, '.terraform');
     if (!fs.existsSync(terraformDir)) {
-      errors.push('.terraform directory missing (needed for ignore pattern testing)');
+      errors.push(
+        '.terraform directory missing (needed for ignore pattern testing)'
+      );
     }
-    
+
     return { isValid: errors.length === 0, errors };
   }
 }

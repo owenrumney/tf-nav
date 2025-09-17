@@ -3,9 +3,13 @@
  */
 
 import * as fs from 'fs';
-import { Address, ProjectIndex, ParseResult, ParserConfig } from '../types';
-import { TerraformParserFactory } from './parser';
+import * as path from 'path';
+
 import { extractReferenceEdges } from '../graph/refs';
+import { Address, ProjectIndex, ParserConfig } from '../types';
+
+import { resolveModuleSource, findModuleFiles } from './moduleResolver';
+import { TerraformParserFactory } from './parser';
 
 /**
  * Options for building the project index
@@ -13,15 +17,19 @@ import { extractReferenceEdges } from '../graph/refs';
 export interface BuildIndexOptions extends ParserConfig {
   /** Whether to continue parsing on errors */
   continueOnError?: boolean;
-  
+
   /** Maximum number of files to parse (for testing/debugging) */
   maxFiles?: number;
-  
+
   /** Whether to log progress */
   verbose?: boolean;
-  
+
   /** Progress callback for worker threads */
-  progressCallback?: (processed: number, total: number, currentFile: string) => void;
+  progressCallback?: (
+    processed: number,
+    total: number,
+    currentFile: string
+  ) => void;
 }
 
 /**
@@ -30,34 +38,34 @@ export interface BuildIndexOptions extends ParserConfig {
 export interface BuildIndexResult {
   /** The built project index */
   index: ProjectIndex;
-  
+
   /** Summary statistics */
   stats: {
     /** Total files processed */
     filesProcessed: number;
-    
+
     /** Files with parse errors */
     filesWithErrors: number;
-    
+
     /** Total blocks parsed */
     totalBlocks: number;
-    
+
     /** Blocks by type counts */
     blockTypeCounts: Map<string, number>;
-    
+
     /** Blocks by file counts */
     blockFilesCounts: Map<string, number>;
-    
+
     /** Build time in milliseconds */
     buildTimeMs: number;
-    
+
     /** Build start time */
     buildStartTime: Date;
-    
+
     /** Build end time */
     buildEndTime: Date;
   };
-  
+
   /** All parse errors encountered */
   errors: Array<{
     file: string;
@@ -71,16 +79,19 @@ export interface BuildIndexResult {
  * @param options Build options
  * @returns Build result with index and statistics
  */
-export async function buildIndex(files: string[], options: BuildIndexOptions = {}): Promise<BuildIndexResult> {
+export async function buildIndex(
+  files: string[],
+  options: BuildIndexOptions = {}
+): Promise<BuildIndexResult> {
   const buildStartTime = new Date();
   const buildStartMs = performance.now();
-  
+
   const result: BuildIndexResult = {
     index: {
       blocks: [],
       byType: new Map(),
       byFile: new Map(),
-      refs: [] // TODO: Implement dependency analysis in future
+      refs: [], // TODO: Implement dependency analysis in future
     },
     stats: {
       filesProcessed: 0,
@@ -90,13 +101,15 @@ export async function buildIndex(files: string[], options: BuildIndexOptions = {
       blockFilesCounts: new Map(),
       buildTimeMs: 0,
       buildStartTime,
-      buildEndTime: buildStartTime // Will be updated at the end
+      buildEndTime: buildStartTime, // Will be updated at the end
     },
-    errors: []
+    errors: [],
   };
 
-  const filesToProcess = options.maxFiles ? files.slice(0, options.maxFiles) : files;
-  
+  const filesToProcess = options.maxFiles
+    ? files.slice(0, options.maxFiles)
+    : files;
+
   if (options.verbose) {
     console.log(`Building index for ${filesToProcess.length} files...`);
   }
@@ -104,7 +117,7 @@ export async function buildIndex(files: string[], options: BuildIndexOptions = {
   // Parse each file
   for (let i = 0; i < filesToProcess.length; i++) {
     const filePath = filesToProcess[i];
-    
+
     try {
       if (options.verbose) {
         console.log(`Parsing: ${filePath}`);
@@ -117,79 +130,145 @@ export async function buildIndex(files: string[], options: BuildIndexOptions = {
 
       // Read file content
       const content = await fs.promises.readFile(filePath, 'utf-8');
-      
+
       // Parse the file
-      const parseResult = await TerraformParserFactory.parseFile(filePath, content, options);
-      
+      const parseResult = await TerraformParserFactory.parseFile(
+        filePath,
+        content,
+        options
+      );
+
       result.stats.filesProcessed++;
-      
+
       // Handle parse errors
       if (parseResult.errors.length > 0) {
         result.stats.filesWithErrors++;
-        
+
         for (const parseError of parseResult.errors) {
           result.errors.push({
             file: filePath,
-            error: parseError.message
+            error: parseError.message,
           });
         }
-        
+
         if (!options.continueOnError) {
           break;
         }
       }
-      
+
       // Add blocks to the main collection
       result.index.blocks.push(...parseResult.blocks);
       result.stats.totalBlocks += parseResult.blocks.length;
-      
+
       // Update file-specific count
       result.stats.blockFilesCounts.set(filePath, parseResult.blocks.length);
-      
+
       // Update block type counts
       for (const block of parseResult.blocks) {
-        const currentCount = result.stats.blockTypeCounts.get(block.blockType) || 0;
+        const currentCount =
+          result.stats.blockTypeCounts.get(block.blockType) || 0;
         result.stats.blockTypeCounts.set(block.blockType, currentCount + 1);
       }
-      
     } catch (error) {
       result.stats.filesWithErrors++;
       result.errors.push({
         file: filePath,
-        error: `Failed to process file: ${error}`
+        error: `Failed to process file: ${error}`,
       });
-      
+
       if (!options.continueOnError) {
         break;
       }
     }
   }
 
+  // Resolve and parse module sources
+  await resolveModules(result.index, options);
+
   // Build organized maps with sorting
   buildOrganizedMaps(result.index);
-  
+
   // Extract reference edges for dependency graph
   result.index.refs = extractReferenceEdges(result.index);
-  
+
   // Calculate final timing
   const buildEndMs = performance.now();
   const buildEndTime = new Date();
   result.stats.buildTimeMs = Math.round(buildEndMs - buildStartMs);
   result.stats.buildEndTime = buildEndTime;
-  
+
   // Final progress report
   if (options.progressCallback) {
-    options.progressCallback(filesToProcess.length, filesToProcess.length, 'Complete');
+    options.progressCallback(
+      filesToProcess.length,
+      filesToProcess.length,
+      'Complete'
+    );
   }
-  
+
   if (options.verbose) {
-    console.log(`Index built: ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`);
-    console.log('Block type distribution:', Object.fromEntries(result.stats.blockTypeCounts));
+    console.log(
+      `Index built: ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`
+    );
+    console.log(
+      'Block type distribution:',
+      Object.fromEntries(result.stats.blockTypeCounts)
+    );
     console.log(`Build time: ${result.stats.buildTimeMs}ms`);
     console.log(`Reference edges: ${result.index.refs?.length || 0}`);
   }
 
   return result;
+}
+
+/**
+ * Remove duplicate blocks based on their logical identity
+ * @param index The project index to deduplicate
+ */
+function deduplicateBlocks(index: ProjectIndex): void {
+  console.log(`[Deduplication] Starting with ${index.blocks.length} blocks`);
+  
+  const uniqueBlocks = new Map<string, Address>();
+  
+  for (const block of index.blocks) {
+    // Create a unique key based on the block's logical identity
+    // Use blockType, kind, name, and module path to identify duplicates
+    const modulePath = block.modulePath.join('.');
+    const key = `${block.blockType}:${block.kind || ''}:${block.name || ''}:${modulePath}`;
+    
+    const existing = uniqueBlocks.get(key);
+    if (existing) {
+      // We have a duplicate - prefer the one NOT from .terraform
+      const blockFromTerraform = block.file.includes('.terraform');
+      const existingFromTerraform = existing.file.includes('.terraform');
+      
+      if (blockFromTerraform && !existingFromTerraform) {
+        // Keep existing (prefer source over cache)
+        console.log(`[Deduplication] Skipping duplicate from .terraform: ${key} in ${block.file}`);
+        continue;
+      } else if (!blockFromTerraform && existingFromTerraform) {
+        // Replace existing with source version
+        console.log(`[Deduplication] Replacing .terraform version with source: ${key} from ${block.file}`);
+        uniqueBlocks.set(key, block);
+      } else {
+        // Both from same type of source, prefer the one with shorter file path (more likely to be primary)
+        if (block.file.length < existing.file.length) {
+          console.log(`[Deduplication] Replacing with shorter path: ${key} from ${block.file}`);
+          uniqueBlocks.set(key, block);
+        } else {
+          console.log(`[Deduplication] Keeping existing: ${key} in ${existing.file}`);
+        }
+      }
+    } else {
+      uniqueBlocks.set(key, block);
+    }
+  }
+  
+  // Replace the blocks array with deduplicated blocks
+  const originalCount = index.blocks.length;
+  index.blocks = Array.from(uniqueBlocks.values());
+  
+  console.log(`[Deduplication] Finished with ${index.blocks.length} unique blocks (removed ${originalCount - index.blocks.length} duplicates)`);
 }
 
 /**
@@ -200,7 +279,10 @@ function buildOrganizedMaps(index: ProjectIndex): void {
   // Clear existing maps
   index.byType.clear();
   index.byFile.clear();
-  
+
+  // Deduplicate blocks before organizing
+  deduplicateBlocks(index);
+
   // Group blocks by type
   const typeGroups = new Map<string, Address[]>();
   for (const block of index.blocks) {
@@ -208,33 +290,33 @@ function buildOrganizedMaps(index: ProjectIndex): void {
     blocks.push(block);
     typeGroups.set(block.blockType, blocks);
   }
-  
+
   // Sort by resource name within each type and populate byType map
   for (const [blockType, blocks] of typeGroups.entries()) {
     const sortedBlocks = blocks.sort((a, b) => {
       // Primary sort: by name (if available)
       const nameA = a.name || '';
       const nameB = b.name || '';
-      
+
       if (nameA !== nameB) {
         return nameA.localeCompare(nameB);
       }
-      
+
       // Secondary sort: by kind (for resources/data sources)
       const kindA = a.kind || '';
       const kindB = b.kind || '';
-      
+
       if (kindA !== kindB) {
         return kindA.localeCompare(kindB);
       }
-      
+
       // Tertiary sort: by file path
       return a.file.localeCompare(b.file);
     });
-    
+
     index.byType.set(blockType, sortedBlocks);
   }
-  
+
   // Group blocks by file
   const fileGroups = new Map<string, Address[]>();
   for (const block of index.blocks) {
@@ -242,7 +324,7 @@ function buildOrganizedMaps(index: ProjectIndex): void {
     blocks.push(block);
     fileGroups.set(block.file, blocks);
   }
-  
+
   // Sort by range within each file and populate byFile map
   for (const [filePath, blocks] of fileGroups.entries()) {
     const sortedBlocks = blocks.sort((a, b) => {
@@ -250,11 +332,11 @@ function buildOrganizedMaps(index: ProjectIndex): void {
       if (a.range.start !== b.range.start) {
         return a.range.start - b.range.start;
       }
-      
+
       // Secondary sort: by end position (smaller ranges first)
       return a.range.end - b.range.end;
     });
-    
+
     index.byFile.set(filePath, sortedBlocks);
   }
 }
@@ -266,11 +348,11 @@ function buildOrganizedMaps(index: ProjectIndex): void {
  */
 export function getBlockTypeCounts(index: ProjectIndex): Map<string, number> {
   const counts = new Map<string, number>();
-  
+
   for (const [blockType, blocks] of index.byType.entries()) {
     counts.set(blockType, blocks.length);
   }
-  
+
   return counts;
 }
 
@@ -281,11 +363,11 @@ export function getBlockTypeCounts(index: ProjectIndex): Map<string, number> {
  */
 export function getFileBlockCounts(index: ProjectIndex): Map<string, number> {
   const counts = new Map<string, number>();
-  
+
   for (const [filePath, blocks] of index.byFile.entries()) {
     counts.set(filePath, blocks.length);
   }
-  
+
   return counts;
 }
 
@@ -296,10 +378,10 @@ export function getFileBlockCounts(index: ProjectIndex): Map<string, number> {
  */
 export function createIndexSummary(index: ProjectIndex): string {
   const lines: string[] = [];
-  
+
   lines.push(`Total blocks: ${index.blocks.length}`);
   lines.push('');
-  
+
   // Block type summary
   lines.push('Blocks by type:');
   const typeCounts = getBlockTypeCounts(index);
@@ -307,7 +389,7 @@ export function createIndexSummary(index: ProjectIndex): string {
     lines.push(`  ${blockType}: ${count}`);
   }
   lines.push('');
-  
+
   // File summary
   lines.push('Blocks by file:');
   const fileCounts = getFileBlockCounts(index);
@@ -315,8 +397,92 @@ export function createIndexSummary(index: ProjectIndex): string {
     const fileName = filePath.split('/').pop() || filePath;
     lines.push(`  ${fileName}: ${count}`);
   }
-  
+
   return lines.join('\n');
+}
+
+/**
+ * Resolve and parse module sources to include module resources in the index
+ * @param index The project index to update
+ * @param options Build options
+ */
+async function resolveModules(
+  index: ProjectIndex,
+  options: BuildIndexOptions
+): Promise<void> {
+  // Find all module blocks with sources
+  const moduleBlocks = index.blocks.filter(
+    (block) => block.blockType === 'module' && block.source
+  );
+
+  console.log(`[ModuleResolver] Found ${moduleBlocks.length} module blocks with sources`);
+  for (const block of moduleBlocks) {
+    console.log(`[ModuleResolver] Module: ${block.name} -> ${block.source}`);
+  }
+
+  for (const moduleBlock of moduleBlocks) {
+    if (!moduleBlock.source) continue;
+
+    try {
+      // Resolve the module source
+      const baseDir = path.dirname(moduleBlock.file);
+      console.log(`[ModuleResolver] Resolving ${moduleBlock.name} from baseDir: ${baseDir}`);
+      const resolution = resolveModuleSource(moduleBlock.source, baseDir);
+
+      console.log(`[ModuleResolver] Resolution result for ${moduleBlock.name}:`, resolution);
+
+      if (resolution.resolved && resolution.modulePath) {
+        console.log(`[ModuleResolver] Resolving module: ${moduleBlock.name} -> ${resolution.modulePath}`);
+
+        // Find all Terraform files in the module
+        const moduleFiles = findModuleFiles(resolution.modulePath);
+
+        console.log(`[ModuleResolver] Found ${moduleFiles.length} files in module: ${moduleFiles.join(', ')}`);
+
+        // Parse each module file
+        for (const moduleFile of moduleFiles) {
+          try {
+            const content = await fs.promises.readFile(moduleFile, 'utf-8');
+
+            // Create parser config with updated module path
+            const moduleConfig: ParserConfig = {
+              ...options,
+              modulePath: [...(moduleBlock.modulePath || []), `module.${moduleBlock.name}`],
+            };
+
+            console.log(`[ModuleResolver] Parsing ${moduleFile} with modulePath: ${JSON.stringify(moduleConfig.modulePath)}`);
+
+            const parseResult = await TerraformParserFactory.parseFile(
+              moduleFile,
+              content,
+              moduleConfig
+            );
+
+            // Add parsed blocks to the index
+            index.blocks.push(...parseResult.blocks);
+
+            console.log(`[ModuleResolver] Added ${parseResult.blocks.length} blocks from ${path.relative(baseDir, moduleFile)}`);
+            for (const block of parseResult.blocks) {
+              console.log(`  - ${block.blockType} ${block.kind || ''} ${block.name || ''} (modulePath: ${JSON.stringify(block.modulePath)})`);
+            }
+
+            // Handle parse errors
+            if (parseResult.errors.length > 0 && options.verbose) {
+              for (const error of parseResult.errors) {
+                console.warn(`  Parse error in ${path.relative(baseDir, moduleFile)}: ${error.message}`);
+              }
+            }
+          } catch (error) {
+            console.warn(`[ModuleResolver] Failed to parse module file ${path.relative(baseDir, moduleFile)}: ${error}`);
+          }
+        }
+      } else {
+        console.log(`[ModuleResolver] Could not resolve module: ${moduleBlock.name} (${resolution.error})`);
+      }
+    } catch (error) {
+      console.warn(`[ModuleResolver] Failed to resolve module ${moduleBlock.name}: ${error}`);
+    }
+  }
 }
 
 /**
@@ -325,34 +491,37 @@ export function createIndexSummary(index: ProjectIndex): string {
  * @param criteria Search criteria
  * @returns Matching blocks
  */
-export function findBlocks(index: ProjectIndex, criteria: {
-  blockType?: string;
-  provider?: string;
-  kind?: string;
-  name?: string;
-  file?: string;
-}): Address[] {
+export function findBlocks(
+  index: ProjectIndex,
+  criteria: {
+    blockType?: string;
+    provider?: string;
+    kind?: string;
+    name?: string;
+    file?: string;
+  }
+): Address[] {
   let blocks = index.blocks;
-  
+
   if (criteria.blockType) {
-    blocks = blocks.filter(b => b.blockType === criteria.blockType);
+    blocks = blocks.filter((b) => b.blockType === criteria.blockType);
   }
-  
+
   if (criteria.provider) {
-    blocks = blocks.filter(b => b.provider === criteria.provider);
+    blocks = blocks.filter((b) => b.provider === criteria.provider);
   }
-  
+
   if (criteria.kind) {
-    blocks = blocks.filter(b => b.kind === criteria.kind);
+    blocks = blocks.filter((b) => b.kind === criteria.kind);
   }
-  
+
   if (criteria.name) {
-    blocks = blocks.filter(b => b.name === criteria.name);
+    blocks = blocks.filter((b) => b.name === criteria.name);
   }
-  
+
   if (criteria.file) {
-    blocks = blocks.filter(b => b.file === criteria.file);
+    blocks = blocks.filter((b) => b.file === criteria.file);
   }
-  
+
   return blocks;
 }

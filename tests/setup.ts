@@ -6,7 +6,7 @@ const mockVSCode = {
   workspace: {
     workspaceFolders: [
       {
-        uri: { fsPath: path.join(__dirname,  'workspace') },
+        uri: { fsPath: path.join(__dirname, 'workspace') },
         name: 'test-workspace',
         index: 0,
       },
@@ -26,10 +26,10 @@ const mockVSCode = {
       onDidChange: jest.fn(() => ({ dispose: jest.fn() })),
       onDidCreate: jest.fn(() => ({ dispose: jest.fn() })),
       onDidDelete: jest.fn(() => ({ dispose: jest.fn() })),
-      dispose: jest.fn()
+      dispose: jest.fn(),
     })),
     fs: {
-      readFile: jest.fn()
+      readFile: jest.fn(),
     },
   },
   window: {
@@ -52,9 +52,9 @@ const mockVSCode = {
   Uri: {
     file: jest.fn((path: string) => ({ fsPath: path })),
   },
-  RelativePattern: jest.fn((base: any, pattern: string) => ({ 
-    base: base, 
-    pattern: pattern 
+  RelativePattern: jest.fn((base: any, pattern: string) => ({
+    base: base,
+    pattern: pattern,
   })),
   EventEmitter: jest.fn(() => ({
     event: jest.fn(),
@@ -67,7 +67,7 @@ const mockVSCode = {
     tooltip: '',
     contextValue: '',
     iconPath: null,
-    command: null
+    command: null,
   })),
   TreeItemCollapsibleState: {
     None: 0,
@@ -90,5 +90,5 @@ declare global {
   var mockVSCode: any;
 }
 
-global.TEST_WORKSPACE_PATH = path.join(__dirname,  'workspace');
+global.TEST_WORKSPACE_PATH = path.join(__dirname, 'workspace');
 global.mockVSCode = mockVSCode;

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Core types for tf-nav extension based on design.md
  */
@@ -5,7 +6,13 @@
 /**
  * Terraform block types
  */
-export type BlockType = 'resource' | 'data' | 'module' | 'variable' | 'output' | 'locals';
+export type BlockType =
+  | 'resource'
+  | 'data'
+  | 'module'
+  | 'variable'
+  | 'output'
+  | 'locals';
 
 /**
  * Address represents a parsed Terraform block with metadata
@@ -13,22 +20,25 @@ export type BlockType = 'resource' | 'data' | 'module' | 'variable' | 'output' |
 export interface Address {
   /** Type of Terraform block */
   blockType: BlockType;
-  
+
   /** Provider name (e.g., "aws" from aws_instance) */
   provider?: string;
-  
+
   /** Resource/data source kind (e.g., "aws_security_group") */
   kind?: string;
-  
+
   /** Block name/identifier */
   name?: string;
-  
+
   /** Module path hierarchy (e.g., ["module.vpc", "module.db"]) */
   modulePath: string[];
-  
+
   /** Absolute file path where block is defined */
   file: string;
-  
+
+  /** Module source path (for module blocks) */
+  source?: string;
+
   /** Byte offset range in file */
   range: {
     start: number;
@@ -42,13 +52,13 @@ export interface Address {
 export interface Edge {
   /** Source terraform address */
   from: Address;
-  
+
   /** Target terraform address */
   to: Address;
-  
+
   /** Type of edge relationship */
-  type: 'reference' | 'dependency' | 'module_call';
-  
+  type: 'reference' | 'dependency' | 'module_call' | 'contains';
+
   /** Additional metadata about the relationship */
   attributes?: {
     /** Type of reference (resource, data, module, var, local) */
@@ -66,13 +76,13 @@ export interface Edge {
 export interface ProjectIndex {
   /** All parsed blocks */
   blocks: Address[];
-  
+
   /** Blocks grouped by type (resource, data, etc.) */
   byType: Map<string, Address[]>;
-  
+
   /** Blocks grouped by file path */
   byFile: Map<string, Address[]>;
-  
+
   /** Dependency edges (for v2 graph functionality) */
   refs?: Edge[];
 }
@@ -83,7 +93,7 @@ export interface ProjectIndex {
 export interface ParseResult {
   /** Successfully parsed blocks */
   blocks: Address[];
-  
+
   /** Parse errors encountered */
   errors: ParseError[];
 }
@@ -94,16 +104,16 @@ export interface ParseResult {
 export interface ParseError {
   /** Error message */
   message: string;
-  
+
   /** File where error occurred */
   file: string;
-  
+
   /** Line number (1-based) */
   line?: number;
-  
+
   /** Column number (1-based) */
   column?: number;
-  
+
   /** Byte offset range where error occurred */
   range?: {
     start: number;
@@ -130,19 +140,19 @@ export interface HCLBlock {
 export interface ParserConfig {
   /** Include locals blocks in parsing */
   includeLocals?: boolean;
-  
+
   /** Include variable blocks in parsing */
   includeVariables?: boolean;
-  
+
   /** Include output blocks in parsing */
   includeOutputs?: boolean;
-  
+
   /** Include data source blocks in parsing */
   includeDataSources?: boolean;
-  
+
   /** Module path context for nested parsing */
   modulePath?: string[];
-  
+
   /** Whether to use caching (default: true) */
   useCache?: boolean;
 }
@@ -157,12 +167,12 @@ export type TerraformAddress = string;
  */
 export function createTerraformAddress(address: Address): TerraformAddress {
   const parts: string[] = [];
-  
+
   // Add module path
   if (address.modulePath.length > 0) {
     parts.push(...address.modulePath);
   }
-  
+
   // Add block type and identifiers
   switch (address.blockType) {
     case 'resource':
@@ -194,7 +204,7 @@ export function createTerraformAddress(address: Address): TerraformAddress {
       parts.push('local');
       break;
   }
-  
+
   return parts.join('.');
 }
 

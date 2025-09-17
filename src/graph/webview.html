@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terraform Dependency Graph</title>
+    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--vscode-editor-background);
+            color: var(--vscode-editor-foreground);
+        }
+        
+        #toolbar {
+            padding: 10px;
+            background-color: var(--vscode-editor-background);
+            border-bottom: 1px solid var(--vscode-panel-border);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        button {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        
+        button:disabled {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        button:disabled:hover {
+            background-color: var(--vscode-button-secondaryBackground);
+        }
+        
+        #cy {
+            width: 100%;
+            height: calc(100vh - 60px);
+            background-color: var(--vscode-editor-background);
+        }
+        
+        .info {
+            position: absolute;
+            top: 70px;
+            right: 10px;
+            background-color: var(--vscode-editor-background);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 4px;
+            padding: 10px;
+            max-width: 250px;
+            font-size: 12px;
+            z-index: 1000;
+        }
+        
+        .info h3 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+        }
+        
+        .info p {
+            margin: 4px 0;
+        }
+        
+        /* Context menu styling */
+        #context-menu {
+            position: absolute;
+            background: var(--vscode-menu-background);
+            border: 1px solid var(--vscode-menu-border);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 2000;
+            min-width: 180px;
+            font-size: 13px;
+            padding: 4px 0;
+        }
+        
+        .context-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            cursor: pointer;
+            color: var(--vscode-menu-foreground);
+            transition: background-color 0.1s;
+        }
+        
+        .context-item:hover {
+            background-color: var(--vscode-menu-selectionBackground);
+            color: var(--vscode-menu-selectionForeground);
+        }
+        
+        .context-item .shortcut {
+            font-size: 11px;
+            opacity: 0.7;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <button id="backBtn" onclick="navigateBack()" disabled>⬅️ Back</button>
+        <button id="forwardBtn" onclick="navigateForward()" disabled>➡️ Forward</button>
+        <div style="width: 1px; height: 20px; background-color: var(--vscode-panel-border); margin: 0 5px;"></div>
+        <label for="depthSelect" style="font-size: 12px; margin-right: 5px; color: var(--vscode-foreground);">Depth:</label>
+        <select id="depthSelect" onchange="changeDepth(this.value)" style="font-size: 12px; padding: 2px 4px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 3px; margin-right: 5px;">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4" selected>4</option>
+            <option value="5">5</option>
+        </select>
+        <div style="width: 1px; height: 20px; background-color: var(--vscode-panel-border); margin: 0 5px;"></div>
+        <button id="refreshBtn" onclick="refreshGraph()">🔄 Refresh</button>
+        <button onclick="fitGraph()">🔍 Fit</button>
+        <button onclick="resetLayout()">📐 Layout</button>
+        <span style="margin-left: auto; font-size: 12px; opacity: 0.7;">
+            Click to select • Right-click for menu • Enter to reveal • Ctrl+C to copy
+        </span>
+    </div>
+    
+    <div id="cy"></div>
+    
+    <div id="info" class="info" style="display: none;">
+        <h3 id="info-title">Node Info</h3>
+        <p><strong>Type:</strong> <span id="info-type"></span></p>
+        <p><strong>File:</strong> <span id="info-file"></span></p>
+        <p><strong>Module:</strong> <span id="info-module"></span></p>
+    </div>
+
+    <script>
+        const vscode = acquireVsCodeApi();
+        let cy;
+        
+        // Smart cluster positioning with improved anti-overlap
+        const nodePositions = new Map();
+        const minDistance = 120; // Increased minimum distance between nodes for better readability
+        
+        function getClusterPosition(node) {
+            const cluster = node.data('cluster');
+            const nodeId = node.data('id');
+            
+            // If position already calculated, return it
+            if (nodePositions.has(nodeId)) {
+                return nodePositions.get(nodeId);
+            }
+            
+            // Define cluster centers with better spacing
+            const clusterCenters = {
+                'variable': { x: -300, y: -200 },
+                'resource': { x: 300, y: -200 },
+                'data': { x: 300, y: 200 },
+                'module': { x: -300, y: 200 },
+                'locals': { x: 0, y: -300 },
+                'output': { x: 0, y: 300 }
+            };
+            
+            const center = clusterCenters[cluster] || { x: 0, y: 0 };
+            const maxAttempts = 100; // More attempts for better positioning
+            
+            let position;
+            let attempts = 0;
+            
+            do {
+                // Try positions in expanding rings around cluster center
+                const ring = Math.floor(attempts / 12); // 12 positions per ring for better distribution
+                const angleStep = (2 * Math.PI) / 12;
+                const angle = (attempts % 12) * angleStep;
+                const distance = ring * 60 + 40; // Larger ring steps and base distance
+                
+                position = {
+                    x: center.x + Math.cos(angle) * distance,
+                    y: center.y + Math.sin(angle) * distance
+                };
+                
+                attempts++;
+                
+                // Check if this position conflicts with existing nodes
+                if (attempts >= maxAttempts || !hasOverlap(position, nodePositions, minDistance)) {
+                    break;
+                }
+            } while (attempts < maxAttempts);
+            
+            // Store the calculated position
+            nodePositions.set(nodeId, position);
+            return position;
+        }
+        
+        function hasOverlap(newPos, existingPositions, minDist) {
+            for (const [nodeId, pos] of existingPositions) {
+                const dx = newPos.x - pos.x;
+                const dy = newPos.y - pos.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < minDist) {
+                    return true; // Overlap detected
+                }
+            }
+            return false; // No overlap
+        }
+        
+        function clearPositionCache() {
+            nodePositions.clear();
+        }
+
+        // Initialize Cytoscape
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('[Webview] Initializing Cytoscape...');
+            console.log('[Webview] cytoscape available:', typeof window.cytoscape !== 'undefined');
+            
+            if (typeof window.cytoscape === 'undefined') {
+                console.error('[Webview] Cytoscape not loaded!');
+                return;
+            }
+            
+            cy = cytoscape({
+                container: document.getElementById('cy'),
+                
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': 'transparent',
+                            'label': 'data(label)',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'font-size': '11px',
+                            'font-weight': 500,
+                            'font-family': 'system-ui, -apple-system, sans-serif',
+                            'color': 'data(color)',
+                            'text-wrap': 'wrap',
+                            'text-max-width': '120px',
+                            'width': 'label',
+                            'height': 'label',
+                            'padding': '4px',
+                            'shape': 'rectangle',
+                            'border-width': 0
+                        }
+                    },
+                    {
+                        selector: 'node:hover',
+                        style: {
+                            'transform': 'scale(1.1)'
+                        }
+                    },
+                    {
+                        selector: 'node.selected',
+                        style: {
+                            'border-width': 2,
+                            'border-color': '#007acc',
+                            'border-style': 'solid'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': 'rgba(150,150,150,0.8)',
+                            'target-arrow-color': 'rgba(150,150,150,0.8)',
+                            'target-arrow-shape': 'triangle',
+                            'target-arrow-size': '8px',
+                            'curve-style': 'bezier',
+                            'control-point-step-size': 40,
+                            'label': 'data(label)',
+                            'font-size': '9px',
+                            'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                            'text-rotation': 'autorotate',
+                            'text-margin-y': -8,
+                            'text-background-color': 'rgba(255,255,255,0.9)',
+                            'text-background-padding': '2px',
+                            'text-background-shape': 'roundrectangle',
+                            'color': '#555'
+                        }
+                    },
+                    {
+                        selector: 'edge:hover',
+                        style: {
+                            'width': 3,
+                            'line-color': 'rgba(100,100,100,1)',
+                            'target-arrow-color': 'rgba(100,100,100,1)'
+                        }
+                    },
+                    {
+                        selector: 'edge.highlighted',
+                        style: {
+                            'width': 4,
+                            'line-color': '#007acc',
+                            'target-arrow-color': '#007acc',
+                            'source-arrow-color': '#007acc',
+                            'z-index': 9999
+                        }
+                    },
+                    {
+                        selector: 'node.dimmed',
+                        style: {
+                            'color': 'rgba(100,100,100,0.4)',
+                            'opacity': 0.3
+                        }
+                    },
+                    {
+                        selector: 'edge.dimmed',
+                        style: {
+                            'line-color': 'rgba(150,150,150,0.2)',
+                            'target-arrow-color': 'rgba(150,150,150,0.2)',
+                            'source-arrow-color': 'rgba(150,150,150,0.2)',
+                            'opacity': 0.3
+                        }
+                    },
+                    {
+                        selector: 'node:selected',
+                        style: {
+                            'border-width': 2,
+                            'border-color': '#007acc',
+                            'border-style': 'solid',
+                            'transform': 'scale(1.15)'
+                        }
+                    }
+                ],
+                
+                layout: {
+                    name: 'preset',
+                    positions: function(node) {
+                        return getClusterPosition(node);
+                    },
+                    fit: true,
+                    padding: 50
+                }
+            });
+            
+            // Event handlers
+            let selectedNode = null;
+            
+            cy.on('tap', 'node', function(evt) {
+                const node = evt.target;
+                const address = node.data('address');
+                
+                // Skip cluster nodes
+                if (node.data('type') === 'cluster') {
+                    return;
+                }
+                
+                // Clear previous styling
+                cy.nodes().removeClass('selected dimmed');
+                cy.edges().removeClass('highlighted dimmed');
+                
+                // Mark this node as selected
+                node.addClass('selected');
+                selectedNode = node;
+                
+                // Get connected nodes and edges
+                const connectedEdges = node.connectedEdges();
+                const connectedNodes = connectedEdges.connectedNodes();
+                
+                // Highlight connected edges
+                connectedEdges.addClass('highlighted');
+                
+                // Dim all nodes except the selected one and its connected nodes
+                cy.nodes().forEach(function(n) {
+                    if (n !== node && !connectedNodes.contains(n)) {
+                        n.addClass('dimmed');
+                    }
+                });
+                
+                // Dim all edges except the highlighted ones
+                cy.edges().forEach(function(e) {
+                    if (!connectedEdges.contains(e)) {
+                        e.addClass('dimmed');
+                    }
+                });
+                
+                console.log(`[Webview] Highlighted ${connectedEdges.length} edges and dimmed unconnected elements for node ${node.data('label')}`);
+                
+                // Show info panel
+                showNodeInfo(node);
+                
+                // Send click message to extension
+                vscode.postMessage({
+                    type: 'nodeClick',
+                    data: { address }
+                });
+            });
+            
+            // Background click handler to clear selection and edge highlighting
+            cy.on('tap', function(evt) {
+                // Only handle background clicks (not on nodes or edges)
+                if (evt.target === cy) {
+                    cy.nodes().removeClass('selected dimmed');
+                    cy.edges().removeClass('highlighted dimmed');
+                    selectedNode = null;
+                    hideNodeInfo();
+                    console.log('[Webview] Cleared selection, edge highlighting, and dimming');
+                }
+            });
+            
+            // Right-click context menu
+            cy.on('cxttap', 'node', function(evt) {
+                const node = evt.target;
+                const address = node.data('address');
+                
+                // Skip cluster nodes
+                if (node.data('type') === 'cluster' || !address) {
+                    return;
+                }
+                
+                evt.preventDefault();
+                showContextMenu(evt.renderedPosition, address);
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(evt) {
+                if (selectedNode && selectedNode.data('address')) {
+                    switch(evt.key) {
+                        case 'Enter':
+                        case ' ': // Spacebar
+                            evt.preventDefault();
+                            revealSelectedNode();
+                            break;
+                        case 'c':
+                            if (evt.ctrlKey || evt.metaKey) {
+                                evt.preventDefault();
+                                copySelectedNodeAddress();
+                            }
+                            break;
+                    }
+                }
+            });
+            
+            // Tell extension we're ready
+            vscode.postMessage({ type: 'ready' });
+        });
+        
+        // Handle messages from extension
+        window.addEventListener('message', event => {
+            const message = event.data;
+            
+            switch (message.type) {
+                case 'updateGraph':
+                    updateGraph(message.data);
+                    break;
+                    
+                case 'navigationState':
+                    updateNavigationButtons(message.data);
+                    break;
+                    
+                case 'depthChange':
+                    updateDepthSelector(message.data.depth);
+                    break;
+            }
+        });
+        
+        function updateGraph(data) {
+            console.log('[Webview] Received graph data:', data);
+            console.log('[Webview] Nodes:', data.nodes?.length || 0);
+            console.log('[Webview] Edges:', data.edges?.length || 0);
+            
+            if (cy) {
+                // Clear position cache for fresh layout
+                clearPositionCache();
+                
+                const elements = [...(data.nodes || []), ...(data.edges || [])];
+                console.log('[Webview] Total elements:', elements.length);
+                
+                cy.json({ elements });
+                cy.layout({ 
+                    name: 'preset',
+                    positions: function(node) {
+                        return getClusterPosition(node);
+                    },
+                    fit: true,
+                    padding: 50
+                }).run();
+                
+                console.log('[Webview] Graph updated, node count:', cy.nodes().length);
+            } else {
+                console.error('[Webview] Cytoscape instance not available');
+            }
+            
+            // Reset refresh button state
+            const refreshBtn = document.getElementById('refreshBtn');
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '🔄 Refresh';
+        }
+        
+        function showNodeInfo(node) {
+            const address = node.data('address');
+            const info = document.getElementById('info');
+            
+            // Get provider info for resources and data sources
+            let providerText = '';
+            if (address.blockType === 'resource' || address.blockType === 'data') {
+                const kind = address.kind || '';
+                // Simple provider detection for display
+                if (kind.startsWith('aws_')) providerText = ' (AWS)';
+                else if (kind.startsWith('azure') || kind.startsWith('azurerm')) providerText = ' (Azure)';
+                else if (kind.startsWith('google_') || kind.startsWith('gcp_')) providerText = ' (GCP)';
+                else if (kind.startsWith('kubernetes_') || kind.startsWith('k8s_')) providerText = ' (K8s)';
+                else if (kind.startsWith('docker_')) providerText = ' (Docker)';
+                else if (kind.startsWith('github_')) providerText = ' (GitHub)';
+                else if (kind.startsWith('random_')) providerText = ' (Random)';
+            }
+            
+            document.getElementById('info-title').textContent = node.data('label').replace('\\n', ' ') + providerText;
+            document.getElementById('info-type').textContent = address.blockType + (address.kind ? ' (' + address.kind + ')' : '');
+            document.getElementById('info-file').textContent = node.data('relativePath') || address.file.split('/').pop();
+            document.getElementById('info-module').textContent = address.modulePath.join('.') || 'root';
+            
+            info.style.display = 'block';
+        }
+        
+        function refreshGraph() {
+            const refreshBtn = document.getElementById('refreshBtn');
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '⏳ Refreshing...';
+            vscode.postMessage({ type: 'refresh' });
+        }
+        
+        function fitGraph() {
+            if (cy) {
+                cy.fit();
+            }
+        }
+        
+        function showContextMenu(position, address) {
+            hideContextMenu(); // Hide any existing menu
+            
+            const menu = document.createElement('div');
+            menu.id = 'context-menu';
+            menu.innerHTML = 
+                '<div class="context-item" onclick="revealNode()">' +
+                    '<span>📍 Reveal in Editor</span>' +
+                    '<span class="shortcut">Enter</span>' +
+                '</div>' +
+                '<div class="context-item" onclick="copyNodeAddress()">' +
+                    '<span>📋 Copy Address</span>' +
+                    '<span class="shortcut">Ctrl+C</span>' +
+                '</div>' +
+                '<div class="context-item" onclick="focusNode()">' +
+                    '<span>🎯 Focus Dependencies</span>' +
+                '</div>';
+            
+            menu.style.left = position.x + 'px';
+            menu.style.top = position.y + 'px';
+            document.body.appendChild(menu);
+            
+            // Store address for context actions
+            menu.dataset.address = JSON.stringify(address);
+            
+            // Hide menu when clicking elsewhere
+            setTimeout(() => {
+                document.addEventListener('click', hideContextMenu, { once: true });
+            }, 10);
+        }
+        
+        function hideContextMenu() {
+            const menu = document.getElementById('context-menu');
+            if (menu) {
+                menu.remove();
+            }
+        }
+        
+        function revealNode() {
+            const menu = document.getElementById('context-menu');
+            if (menu && menu.dataset.address) {
+                const address = JSON.parse(menu.dataset.address);
+                vscode.postMessage({
+                    type: 'reveal',
+                    data: { address }
+                });
+                hideContextMenu();
+            }
+        }
+        
+        function copyNodeAddress() {
+            const menu = document.getElementById('context-menu');
+            if (menu && menu.dataset.address) {
+                const address = JSON.parse(menu.dataset.address);
+                vscode.postMessage({
+                    type: 'copyAddress',
+                    data: { address }
+                });
+                hideContextMenu();
+            }
+        }
+        
+        function focusNode() {
+            const menu = document.getElementById('context-menu');
+            if (menu && menu.dataset.address) {
+                const address = JSON.parse(menu.dataset.address);
+                vscode.postMessage({
+                    type: 'focus',
+                    data: { address }
+                });
+                hideContextMenu();
+            }
+        }
+        
+        function revealSelectedNode() {
+            if (selectedNode && selectedNode.data('address')) {
+                vscode.postMessage({
+                    type: 'reveal',
+                    data: { address: selectedNode.data('address') }
+                });
+            }
+        }
+        
+        function copySelectedNodeAddress() {
+            if (selectedNode && selectedNode.data('address')) {
+                vscode.postMessage({
+                    type: 'copyAddress',
+                    data: { address: selectedNode.data('address') }
+                });
+            }
+        }
+        
+        function resetLayout() {
+            if (cy) {
+                // Clear position cache for fresh layout
+                clearPositionCache();
+                
+                cy.layout({ 
+                    name: 'preset',
+                    positions: function(node) {
+                        return getClusterPosition(node);
+                    },
+                    fit: true,
+                    padding: 50
+                }).run();
+            }
+        }
+        
+        function navigateBack() {
+            vscode.postMessage({ type: 'back' });
+        }
+        
+        function navigateForward() {
+            vscode.postMessage({ type: 'forward' });
+        }
+        
+        function updateNavigationButtons(state) {
+            const backBtn = document.getElementById('backBtn');
+            const forwardBtn = document.getElementById('forwardBtn');
+            
+            if (backBtn) {
+                backBtn.disabled = !state.canGoBack;
+            }
+            if (forwardBtn) {
+                forwardBtn.disabled = !state.canGoForward;
+            }
+        }
+        
+        function changeDepth(depth) {
+            console.log('[Webview] Depth changed to:', depth);
+            vscode.postMessage({
+                type: 'depthChange',
+                data: { depth: parseInt(depth) }
+            });
+        }
+        
+        function updateDepthSelector(depth) {
+            console.log('[Webview] Updating depth selector to:', depth);
+            const depthSelect = document.getElementById('depthSelect');
+            if (depthSelect) {
+                depthSelect.value = depth.toString();
+                console.log('[Webview] Depth selector updated successfully');
+            } else {
+                console.error('[Webview] Depth selector element not found!');
+            }
+        }
+        
+        // Hide info panel when clicking elsewhere
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#info') && !e.target.closest('#cy')) {
+                document.getElementById('info').style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

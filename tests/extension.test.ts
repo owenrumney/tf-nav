@@ -13,7 +13,7 @@ describe('Extension Integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     mockContext = {
       subscriptions: [],
       workspaceState: {
@@ -44,16 +44,20 @@ describe('Extension Integration', () => {
     });
 
     it('should create output channel on instantiation', () => {
-      const mockCreateOutputChannel = (global as any).mockVSCode.window.createOutputChannel;
-      
-      expect(mockCreateOutputChannel).toHaveBeenCalledWith('Terraform Navigator');
+      const mockCreateOutputChannel = (global as any).mockVSCode.window
+        .createOutputChannel;
+
+      expect(mockCreateOutputChannel).toHaveBeenCalledWith(
+        'Terraform Navigator'
+      );
     });
 
     it('should use workspace configuration for ignore patterns', async () => {
-      const mockGetConfiguration = (global as any).mockVSCode.workspace.getConfiguration;
-      
+      const mockGetConfiguration = (global as any).mockVSCode.workspace
+        .getConfiguration;
+
       await collector.findTfFiles();
-      
+
       expect(mockGetConfiguration).toHaveBeenCalledWith('tfnav');
     });
 
@@ -68,16 +72,20 @@ describe('Extension Integration', () => {
         }),
       };
 
-      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue(mockConfig);
+      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue(
+        mockConfig
+      );
 
       // Create new collector to test with updated config
       const newCollector = new TerraformFileCollector();
-      
+
       // The collector calls findTfFiles which calls get() with 'ignore'
       await newCollector.findTfFiles();
-      
-      expect(mockConfig.get).toHaveBeenCalledWith('ignore', ['**/.terraform/**']);
-      
+
+      expect(mockConfig.get).toHaveBeenCalledWith('ignore', [
+        '**/.terraform/**',
+      ]);
+
       newCollector.dispose();
     });
   });
@@ -85,7 +93,7 @@ describe('Extension Integration', () => {
   describe('VS Code API Integration', () => {
     it('should properly mock VS Code workspace API', () => {
       const mockWorkspace = (global as any).mockVSCode.workspace;
-      
+
       expect(mockWorkspace.workspaceFolders).toBeDefined();
       expect(mockWorkspace.getConfiguration).toBeDefined();
       expect(mockWorkspace.findFiles).toBeDefined();
@@ -93,15 +101,15 @@ describe('Extension Integration', () => {
 
     it('should properly mock VS Code window API', () => {
       const mockWindow = (global as any).mockVSCode.window;
-      
+
       expect(mockWindow.createOutputChannel).toBeDefined();
     });
 
     it('should properly mock VS Code Uri API', () => {
       const mockUri = (global as any).mockVSCode.Uri;
-      
+
       expect(mockUri.file).toBeDefined();
-      
+
       const testUri = mockUri.file('/tests/path');
       expect(testUri.fsPath).toBe('/tests/path');
     });
@@ -110,19 +118,27 @@ describe('Extension Integration', () => {
   describe('Configuration Handling', () => {
     it('should handle default configuration values', async () => {
       const mockConfig = {
-        get: jest.fn().mockImplementation((key: string, defaultValue?: any) => defaultValue),
+        get: jest
+          .fn()
+          .mockImplementation(
+            (key: string, defaultValue?: any) => defaultValue
+          ),
       };
 
-      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue(mockConfig);
+      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue(
+        mockConfig
+      );
 
       const collector = new TerraformFileCollector();
-      
+
       // The collector calls findTfFiles which calls get() with 'ignore'
       await collector.findTfFiles();
-      
+
       // Should use default ignore patterns when none configured
-      expect(mockConfig.get).toHaveBeenCalledWith('ignore', ['**/.terraform/**']);
-      
+      expect(mockConfig.get).toHaveBeenCalledWith('ignore', [
+        '**/.terraform/**',
+      ]);
+
       collector.dispose();
     });
 
@@ -131,7 +147,9 @@ describe('Extension Integration', () => {
         get: jest.fn().mockReturnValue(undefined),
       };
 
-      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue(mockConfig);
+      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue(
+        mockConfig
+      );
 
       expect(() => {
         const collector = new TerraformFileCollector();
@@ -147,10 +165,10 @@ describe('Extension Integration', () => {
       );
 
       const collector = new TerraformFileCollector();
-      
+
       // Should not throw, should return empty array
       await expect(collector.findTfFiles()).resolves.toEqual([]);
-      
+
       collector.dispose();
     });
 
@@ -158,10 +176,10 @@ describe('Extension Integration', () => {
       (global as any).mockVSCode.workspace.workspaceFolders = null;
 
       const collector = new TerraformFileCollector();
-      
+
       const result = await collector.findTfFiles();
       expect(result).toEqual([]);
-      
+
       collector.dispose();
     });
 
@@ -169,10 +187,10 @@ describe('Extension Integration', () => {
       (global as any).mockVSCode.workspace.workspaceFolders = [];
 
       const collector = new TerraformFileCollector();
-      
+
       const result = await collector.findTfFiles();
       expect(result).toEqual([]);
-      
+
       collector.dispose();
     });
   });

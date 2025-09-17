@@ -2,7 +2,7 @@
   "name": "tf-nav",
   "displayName": "Terraform Navigator",
   "description": "Navigate Terraform configurations with a structured tree view",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "owenrumney",
   "icon": "./media/logo.png",
   "repository": {
@@ -23,7 +23,8 @@
     "hcl"
   ],
   "activationEvents": [
-    "*"
+    "workspaceContains:**/*.tf",
+    "workspaceContains:**/*.tf.json"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -40,7 +41,8 @@
       "terraform-navigator": [
         {
           "id": "tfnavTree",
-          "name": "Terraform Navigator"
+          "name": "Terraform Navigator",
+          "icon": "$(list-tree)"
         }
       ]
     },
@@ -149,6 +151,11 @@
             "**/.terraform/**"
           ],
           "description": "Glob patterns for files/directories to ignore when discovering Terraform files"
+        },
+        "tfnav.includeTerraformCache": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include files from .terraform directory in parsing (useful for analyzing downloaded modules)"
         }
       }
     }
@@ -157,7 +164,7 @@
     "vscode:prepublish": "npm run compile",
     "build": "webpack --mode production",
     "build:dev": "webpack --mode development",
-    "compile": "tsc -p ./",
+    "compile": "webpack --mode development",
     "lint": "eslint ./src",
     "lint:fix": "eslint ./src --fix",
     "check:deps": "eslint . --rule 'import/no-extraneous-dependencies: error' --no-inline-config",

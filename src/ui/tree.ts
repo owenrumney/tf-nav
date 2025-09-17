@@ -2,10 +2,12 @@
  * TreeDataProvider for Terraform Navigator
  */
 
-import * as vscode from 'vscode';
 import * as path from 'path';
-import { ProjectIndex, Address, createTerraformAddress } from '../types';
+
+import * as vscode from 'vscode';
+
 import { TerraformWatcher } from '../indexer/watch';
+import { ProjectIndex, Address, createTerraformAddress } from '../types';
 
 /**
  * Tree item representing a Terraform block or group
@@ -24,7 +26,8 @@ export class TerraformTreeItem extends vscode.TreeItem {
 
     // Set tooltip with detailed information
     if (address) {
-      const modulePath = address.modulePath.length > 0 ? address.modulePath.join('.') + '.' : '';
+      const modulePath =
+        address.modulePath.length > 0 ? address.modulePath.join('.') + '.' : '';
       const fileName = path.basename(address.file);
       this.tooltip = `${modulePath}${terraformAddress}\n${fileName}:${address.range.start}-${address.range.end}`;
     } else {
@@ -83,16 +86,19 @@ export class TerraformTreeItem extends vscode.TreeItem {
 /**
  * Main TreeDataProvider for Terraform Navigator
  */
-export class TerraformTreeDataProvider implements vscode.TreeDataProvider<TerraformTreeItem> {
-  private _onDidChangeTreeData: vscode.EventEmitter<TerraformTreeItem | undefined | null | void> = 
-    new vscode.EventEmitter<TerraformTreeItem | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<TerraformTreeItem | undefined | null | void> = 
-    this._onDidChangeTreeData.event;
+export class TerraformTreeDataProvider
+  implements vscode.TreeDataProvider<TerraformTreeItem>
+{
+  private _onDidChangeTreeData: vscode.EventEmitter<
+    TerraformTreeItem | undefined | null | void
+  > = new vscode.EventEmitter<TerraformTreeItem | undefined | null | void>();
+  readonly onDidChangeTreeData: vscode.Event<
+    TerraformTreeItem | undefined | null | void
+  > = this._onDidChangeTreeData.event;
 
   private currentIndex: ProjectIndex | null = null;
 
   constructor(private watcher: TerraformWatcher) {
-
     // Listen to watcher events
     this.watcher.onIndexBuilt(this.onIndexUpdated.bind(this));
     this.watcher.onFilesUpdated(this.onFilesChanged.bind(this));
@@ -184,14 +190,16 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     }
 
     // Filter out data sources
-    const filteredBlocks = this.currentIndex.blocks.filter(block => block.blockType !== 'data');
-    
+    const filteredBlocks = this.currentIndex.blocks.filter(
+      (block) => block.blockType !== 'data'
+    );
+
     // Rebuild maps
     const filteredIndex: ProjectIndex = {
       blocks: filteredBlocks,
       byType: new Map(),
       byFile: new Map(),
-      refs: this.currentIndex.refs
+      refs: this.currentIndex.refs,
     };
 
     // Rebuild byType map
@@ -240,9 +248,11 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     return filteredIndex;
   }
 
-  private async getBlocksByType(index: ProjectIndex): Promise<TerraformTreeItem[]> {
+  private async getBlocksByType(
+    index: ProjectIndex
+  ): Promise<TerraformTreeItem[]> {
     const typeItems: TerraformTreeItem[] = [];
-    
+
     // Group resources by kind for better organization
     const resourceKinds = new Map<string, Address[]>();
     const otherBlocks = new Map<string, Address[]>();
@@ -263,10 +273,13 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     }
 
     // Create top-level category nodes
-    
+
     // 1. Resources category (if any resources exist)
     if (resourceKinds.size > 0) {
-      const totalResources = Array.from(resourceKinds.values()).reduce((sum, blocks) => sum + blocks.length, 0);
+      const totalResources = Array.from(resourceKinds.values()).reduce(
+        (sum, blocks) => sum + blocks.length,
+        0
+      );
       const resourcesCategory = new TerraformTreeItem(
         `🏗️ Resources (${totalResources})`,
         vscode.TreeItemCollapsibleState.Collapsed,
@@ -276,13 +289,19 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     }
 
     // 2. Other block type categories
-    const categoryOrder = ['data', 'module', 'variable', 'output', 'locals'] as const;
+    const categoryOrder = [
+      'data',
+      'module',
+      'variable',
+      'output',
+      'locals',
+    ] as const;
     const categoryLabels: Record<string, string> = {
-      'data': '🗄️ Data Sources',
-      'module': '📦 Modules', 
-      'variable': '🔧 Variables',
-      'output': '📤 Outputs',
-      'locals': '📍 Locals'
+      data: '🗄️ Data Sources',
+      module: '📦 Modules',
+      variable: '🔧 Variables',
+      output: '📤 Outputs',
+      locals: '📍 Locals',
     };
 
     for (const blockType of categoryOrder) {
@@ -301,22 +320,28 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     return typeItems;
   }
 
-  private async getBlocksByFile(index: ProjectIndex): Promise<TerraformTreeItem[]> {
+  private async getBlocksByFile(
+    index: ProjectIndex
+  ): Promise<TerraformTreeItem[]> {
     // Get workspace folders to calculate relative paths
     const workspaceFolders = vscode.workspace.workspaceFolders;
-    const workspaceRoot = workspaceFolders && workspaceFolders.length > 0 
-      ? workspaceFolders[0].uri.fsPath 
-      : '';
-    
+    const workspaceRoot =
+      workspaceFolders && workspaceFolders.length > 0
+        ? workspaceFolders[0].uri.fsPath
+        : '';
+
     // Build directory tree structure
-    const tree = new Map<string, {
-      type: 'directory' | 'file',
-      path: string,
-      children: Map<string, any>,
-      blocks?: Address[],
-      parent?: string
-    }>();
-    
+    const tree = new Map<
+      string,
+      {
+        type: 'directory' | 'file';
+        path: string;
+        children: Map<string, any>;
+        blocks?: Address[];
+        parent?: string;
+      }
+    >();
+
     // Process all files and build the tree
     for (const [filePath, blocks] of index.byFile.entries()) {
       let displayPath: string;
@@ -325,17 +350,17 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
       } else {
         displayPath = path.basename(filePath);
       }
-      
+
       // Split path into segments
       const segments = displayPath.split(path.sep);
       let currentPath = '';
-      
+
       // Create directory nodes for each segment
       for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
         const parentPath = currentPath;
         currentPath = currentPath ? path.join(currentPath, segment) : segment;
-        
+
         if (!tree.has(currentPath)) {
           const isFile = i === segments.length - 1;
           tree.set(currentPath, {
@@ -343,10 +368,10 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
             path: currentPath,
             children: new Map(),
             blocks: isFile ? blocks : undefined,
-            parent: parentPath || undefined
+            parent: parentPath || undefined,
           });
         }
-        
+
         // Add to parent's children if not root
         if (parentPath && tree.has(parentPath)) {
           const parent = tree.get(parentPath)!;
@@ -354,10 +379,10 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
         }
       }
     }
-    
+
     // Convert tree to TerraformTreeItem array (only root level items)
     const rootItems: TerraformTreeItem[] = [];
-    
+
     for (const [nodePath, node] of tree.entries()) {
       // Only include root level items (no parent)
       if (!node.parent) {
@@ -370,21 +395,26 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
       // Sort directories before files, then alphabetically
       const aIsDir = a.contextValue === 'directory-group';
       const bIsDir = b.contextValue === 'directory-group';
-      
+
       if (aIsDir !== bIsDir) {
         return aIsDir ? -1 : 1; // Directories first
       }
-      
+
       return a.label.localeCompare(b.label);
     });
   }
-  
-  private createFileTreeItem(node: any, workspaceRoot: string): TerraformTreeItem {
+
+  private createFileTreeItem(
+    node: any,
+    workspaceRoot: string
+  ): TerraformTreeItem {
     if (node.type === 'file') {
       // File node
       const blockCount = node.blocks ? node.blocks.length : 0;
-      const fullPath = workspaceRoot ? path.join(workspaceRoot, node.path) : node.path;
-      
+      const fullPath = workspaceRoot
+        ? path.join(workspaceRoot, node.path)
+        : node.path;
+
       return new TerraformTreeItem(
         `${path.basename(node.path)} (${blockCount})`,
         vscode.TreeItemCollapsibleState.Collapsed,
@@ -396,8 +426,10 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     } else {
       // Directory node
       const childCount = node.children.size;
-      const fullPath = workspaceRoot ? path.join(workspaceRoot, node.path) : node.path;
-      
+      const fullPath = workspaceRoot
+        ? path.join(workspaceRoot, node.path)
+        : node.path;
+
       return new TerraformTreeItem(
         `${path.basename(node.path)} (${childCount})`,
         vscode.TreeItemCollapsibleState.Collapsed,
@@ -409,17 +441,20 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     }
   }
 
-  private async getDirectoryChildren(directoryPath: string): Promise<TerraformTreeItem[]> {
+  private async getDirectoryChildren(
+    directoryPath: string
+  ): Promise<TerraformTreeItem[]> {
     if (!this.currentIndex) return [];
-    
+
     // Get workspace folders to calculate relative paths
     const workspaceFolders = vscode.workspace.workspaceFolders;
-    const workspaceRoot = workspaceFolders && workspaceFolders.length > 0 
-      ? workspaceFolders[0].uri.fsPath 
-      : '';
-    
+    const workspaceRoot =
+      workspaceFolders && workspaceFolders.length > 0
+        ? workspaceFolders[0].uri.fsPath
+        : '';
+
     const children: TerraformTreeItem[] = [];
-    
+
     // Find all files that are direct children of this directory
     for (const [filePath, blocks] of this.currentIndex.byFile.entries()) {
       let displayPath: string;
@@ -428,10 +463,10 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
       } else {
         displayPath = path.basename(filePath);
       }
-      
+
       const fileDir = path.dirname(displayPath);
       const fileName = path.basename(displayPath);
-      
+
       // Check if this file is a direct child of the directory
       if (fileDir === directoryPath) {
         const fileItem = new TerraformTreeItem(
@@ -445,7 +480,7 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
         children.push(fileItem);
       }
     }
-    
+
     // Find all subdirectories that are direct children of this directory
     const subdirectories = new Set<string>();
     for (const [filePath] of this.currentIndex.byFile.entries()) {
@@ -455,9 +490,9 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
       } else {
         displayPath = path.basename(filePath);
       }
-      
+
       const fileDir = path.dirname(displayPath);
-      
+
       // Check if this file is in a subdirectory of the current directory
       if (fileDir.startsWith(directoryPath + path.sep)) {
         const relativePath = path.relative(directoryPath, fileDir);
@@ -467,12 +502,14 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
         }
       }
     }
-    
+
     // Create directory items for subdirectories
     for (const subdir of subdirectories) {
       const subdirPath = path.join(directoryPath, subdir);
-      const fullPath = workspaceRoot ? path.join(workspaceRoot, subdirPath) : subdirPath;
-      
+      const fullPath = workspaceRoot
+        ? path.join(workspaceRoot, subdirPath)
+        : subdirPath;
+
       // Count files in this subdirectory (recursively)
       let fileCount = 0;
       for (const [filePath] of this.currentIndex.byFile.entries()) {
@@ -482,12 +519,12 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
         } else {
           displayPath = path.basename(filePath);
         }
-        
+
         if (displayPath.startsWith(subdirPath + path.sep)) {
           fileCount++;
         }
       }
-      
+
       const dirItem = new TerraformTreeItem(
         `${subdir} (${fileCount})`,
         vscode.TreeItemCollapsibleState.Collapsed,
@@ -498,16 +535,16 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
       );
       children.push(dirItem);
     }
-    
+
     return children.sort((a, b) => {
       // Sort directories before files, then alphabetically
       const aIsDir = a.contextValue === 'directory-group';
       const bIsDir = b.contextValue === 'directory-group';
-      
+
       if (aIsDir !== bIsDir) {
         return aIsDir ? -1 : 1; // Directories first
       }
-      
+
       return a.label.localeCompare(b.label);
     });
   }
@@ -517,7 +554,7 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
 
     const resourceKinds = new Map<string, Address[]>();
     const resources = this.currentIndex.byType.get('resource') || [];
-    
+
     // Group resources by kind
     for (const block of resources) {
       if (block.kind) {
@@ -541,36 +578,45 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
     return kindItems;
   }
 
-  private async getResourcesForKind(kindLabel: string): Promise<TerraformTreeItem[]> {
+  private async getResourcesForKind(
+    kindLabel: string
+  ): Promise<TerraformTreeItem[]> {
     if (!this.currentIndex) return [];
 
     // Extract kind from label (e.g., "aws_security_group (3)" -> "aws_security_group")
     const kind = kindLabel.split(' ')[0];
-    
+
     const resources = this.currentIndex.byType.get('resource') || [];
-    const kindResources = resources.filter(resource => resource.kind === kind);
-    
-    return kindResources.map(resource => this.createBlockTreeItem(resource));
+    const kindResources = resources.filter(
+      (resource) => resource.kind === kind
+    );
+
+    return kindResources.map((resource) => this.createBlockTreeItem(resource));
   }
 
-  private async getBlocksForType(blockType: string, typeLabel?: string): Promise<TerraformTreeItem[]> {
+  private async getBlocksForType(
+    blockType: string,
+    typeLabel?: string
+  ): Promise<TerraformTreeItem[]> {
     if (!this.currentIndex) return [];
 
     const blocks = this.currentIndex.byType.get(blockType) || [];
-    return blocks.map(block => this.createBlockTreeItem(block));
+    return blocks.map((block) => this.createBlockTreeItem(block));
   }
 
-  private async getBlocksForFile(filePath: string): Promise<TerraformTreeItem[]> {
+  private async getBlocksForFile(
+    filePath: string
+  ): Promise<TerraformTreeItem[]> {
     if (!this.currentIndex) return [];
 
     const blocks = this.currentIndex.byFile.get(filePath) || [];
-    return blocks.map(block => this.createBlockTreeItem(block));
+    return blocks.map((block) => this.createBlockTreeItem(block));
   }
 
   private createBlockTreeItem(block: Address): TerraformTreeItem {
     const terraformAddress = createTerraformAddress(block);
     let label = terraformAddress;
-    
+
     // Create more readable labels
     if (block.blockType === 'resource' || block.blockType === 'data') {
       label = `${block.kind}.${block.name}`;
@@ -595,24 +641,31 @@ export class TerraformTreeDataProvider implements vscode.TreeDataProvider<Terraf
   private onIndexUpdated(result: any): void {
     this.currentIndex = result.index;
     this.refresh();
-    
+
     // Log quietly to console instead of showing intrusive messages
     const blockCount = result.stats.totalBlocks;
     const fileCount = result.stats.filesProcessed;
-    console.log(`[TerraformTreeDataProvider] Index built - ${blockCount} blocks from ${fileCount} files`);
+    console.log(
+      `[TerraformTreeDataProvider] Index built - ${blockCount} blocks from ${fileCount} files`
+    );
   }
 
-  private onFilesChanged(event: {files: string[], index: ProjectIndex}): void {
+  private onFilesChanged(event: {
+    files: string[];
+    index: ProjectIndex;
+  }): void {
     this.currentIndex = event.index;
     this.refresh();
-    
+
     // Log quietly to console instead of showing intrusive messages
     const blockCount = event.index.blocks.length;
     const changedCount = event.files.length;
-    console.log(`[TerraformTreeDataProvider] Updated ${changedCount} files - ${blockCount} total blocks`);
+    console.log(
+      `[TerraformTreeDataProvider] Updated ${changedCount} files - ${blockCount} total blocks`
+    );
   }
 
-  private onParseErrors(errors: Array<{file: string; error: string}>): void {
+  private onParseErrors(errors: Array<{ file: string; error: string }>): void {
     if (errors.length > 0) {
       const errorCount = errors.length;
       vscode.window.showWarningMessage(

@@ -2,9 +2,11 @@
  * Worker thread for parsing large Terraform workspaces
  */
 
-import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 import * as path from 'path';
+import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
+
 import { ProjectIndex, Address, ParseResult } from '../types';
+
 import { buildIndex, BuildIndexOptions, BuildIndexResult } from './buildIndex';
 
 /**
@@ -44,34 +46,41 @@ const WORKER_THRESHOLD = 500;
 export class TerraformWorkerManager {
   private currentWorker: Worker | null = null;
   private currentRequestId: string | null = null;
-  private progressCallback: ((progress: WorkerProgressUpdate) => void) | null = null;
+  private progressCallback: ((progress: WorkerProgressUpdate) => void) | null =
+    null;
 
   /**
    * Build index using worker thread if file count exceeds threshold
    */
   public async buildIndex(
-    files: string[], 
+    files: string[],
     options: BuildIndexOptions = {},
     onProgress?: (progress: WorkerProgressUpdate) => void
   ): Promise<BuildIndexResult> {
-    
     // Use main thread for small workspaces
     if (files.length <= WORKER_THRESHOLD) {
-      console.log(`Building index on main thread (${files.length} files <= ${WORKER_THRESHOLD} threshold)`);
+      console.log(
+        `Building index on main thread (${files.length} files <= ${WORKER_THRESHOLD} threshold)`
+      );
       return buildIndex(files, options);
     }
 
-    console.log(`Building index on worker thread (${files.length} files > ${WORKER_THRESHOLD} threshold)`);
-    
+    console.log(
+      `Building index on worker thread (${files.length} files > ${WORKER_THRESHOLD} threshold)`
+    );
+
     this.progressCallback = onProgress || null;
-    
+
     return this.buildIndexInWorker(files, options);
   }
 
   /**
    * Build index in worker thread
    */
-  private async buildIndexInWorker(files: string[], options: BuildIndexOptions): Promise<BuildIndexResult> {
+  private async buildIndexInWorker(
+    files: string[],
+    options: BuildIndexOptions
+  ): Promise<BuildIndexResult> {
     // Cancel any existing worker
     await this.cancelCurrentBuild();
 
@@ -82,7 +91,7 @@ export class TerraformWorkerManager {
       // Create worker
       const workerPath = path.join(__dirname, 'worker.js');
       this.currentWorker = new Worker(workerPath, {
-        workerData: { requestId }
+        workerData: { requestId },
       });
 
       // Handle worker messages
@@ -128,7 +137,7 @@ export class TerraformWorkerManager {
       const request: WorkerMessage = {
         type: 'build',
         id: requestId,
-        payload: { files, options } as WorkerBuildRequest
+        payload: { files, options } as WorkerBuildRequest,
       };
 
       this.currentWorker.postMessage(request);
@@ -142,11 +151,11 @@ export class TerraformWorkerManager {
     if (this.currentWorker && this.currentRequestId) {
       const cancelMessage: WorkerMessage = {
         type: 'cancel',
-        id: this.currentRequestId
+        id: this.currentRequestId,
       };
 
       this.currentWorker.postMessage(cancelMessage);
-      
+
       // Wait a bit for graceful shutdown, then terminate
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
@@ -202,7 +211,10 @@ if (!isMainThread) {
     try {
       switch (message.type) {
         case 'build':
-          await handleBuildRequest(message.payload as WorkerBuildRequest, message.id);
+          await handleBuildRequest(
+            message.payload as WorkerBuildRequest,
+            message.id
+          );
           break;
 
         case 'cancel':
@@ -214,7 +226,7 @@ if (!isMainThread) {
       const errorMessage: WorkerMessage = {
         type: 'error',
         id: message.id,
-        payload: error instanceof Error ? error.message : String(error)
+        payload: error instanceof Error ? error.message : String(error),
       };
       parentPort?.postMessage(errorMessage);
     }
@@ -223,7 +235,10 @@ if (!isMainThread) {
   /**
    * Handle build request in worker thread
    */
-  async function handleBuildRequest(request: WorkerBuildRequest, id: string): Promise<void> {
+  async function handleBuildRequest(
+    request: WorkerBuildRequest,
+    id: string
+  ): Promise<void> {
     const { files, options } = request;
 
     try {
@@ -234,7 +249,7 @@ if (!isMainThread) {
         const resultMessage: WorkerMessage = {
           type: 'result',
           id,
-          payload: result
+          payload: result,
         };
         parentPort?.postMessage(resultMessage);
       }
@@ -243,7 +258,7 @@ if (!isMainThread) {
         const errorMessage: WorkerMessage = {
           type: 'error',
           id,
-          payload: error instanceof Error ? error.message : String(error)
+          payload: error instanceof Error ? error.message : String(error),
         };
         parentPort?.postMessage(errorMessage);
       }
@@ -254,25 +269,28 @@ if (!isMainThread) {
    * Build index with progress reporting
    */
   async function buildIndexWithProgress(
-    files: string[], 
-    options: BuildIndexOptions, 
+    files: string[],
+    options: BuildIndexOptions,
     id: string
   ): Promise<BuildIndexResult> {
-    
     // Override options to include progress reporting
     const workerOptions: BuildIndexOptions = {
       ...options,
       verbose: false, // Disable console logging in worker
-      progressCallback: (processed: number, total: number, currentFile: string) => {
+      progressCallback: (
+        processed: number,
+        total: number,
+        currentFile: string
+      ) => {
         if (!cancelled) {
           const progressMessage: WorkerMessage = {
             type: 'progress',
             id,
-            payload: { processed, total, currentFile } as WorkerProgressUpdate
+            payload: { processed, total, currentFile } as WorkerProgressUpdate,
           };
           parentPort?.postMessage(progressMessage);
         }
-      }
+      },
     };
 
     return buildIndex(files, workerOptions);
