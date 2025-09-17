@@ -8,11 +8,15 @@ import { ProjectIndex } from './types';
 import { registerRevealCommand } from './commands/reveal';
 import { registerCopyAddressCommand } from './commands/copyAddress';
 import { registerSwitchViewModeCommand } from './commands/switchViewMode';
+import { registerSearchCommand } from './commands/search';
 import { registerShowGraphCommand } from './commands/showGraph';
 
 export function activate(context: vscode.ExtensionContext) {
-  // Create the file collector
-  const fileCollector = new TerraformFileCollector();
+  console.log('Terraform Navigator: Extension activating...');
+  
+  try {
+    // Create the file collector
+    const fileCollector = new TerraformFileCollector();
 
   // Create the file watcher
   const watcher = new TerraformWatcher(fileCollector, {
@@ -79,6 +83,7 @@ export function activate(context: vscode.ExtensionContext) {
   const revealCommand = registerRevealCommand(context);
   const copyAddressCommand = registerCopyAddressCommand(context);
   const switchViewModeCommand = registerSwitchViewModeCommand(context);
+  const searchCommand = registerSearchCommand(context, () => watcher.getCurrentIndex());
   const showGraphCommand = registerShowGraphCommand(context, graphWebview, () => watcher.getCurrentIndex());
 
   // Add to subscriptions for cleanup
@@ -88,6 +93,7 @@ export function activate(context: vscode.ExtensionContext) {
     revealCommand,
     copyAddressCommand,
     switchViewModeCommand,
+    searchCommand,
     showGraphCommand,
     fileCollector,
     watcher,
@@ -104,6 +110,14 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  console.log('Terraform Navigator: Extension activated successfully');
+  
+  } catch (error) {
+    console.error('Terraform Navigator: Failed to activate extension:', error);
+    vscode.window.showErrorMessage(`Terraform Navigator: Failed to activate - ${error}`);
+    throw error;
+  }
 }
 
 export function deactivate() {}

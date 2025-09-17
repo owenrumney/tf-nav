@@ -1,8 +1,8 @@
 {
   "name": "tf-nav",
-  "displayName": "tf-nav (Terraform Navigator)",
+  "displayName": "Terraform Navigator",
   "description": "Navigate Terraform configurations with a structured tree view",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "publisher": "owenrumney",
   "icon": "./media/logo.png",
   "repository": {
@@ -13,7 +13,8 @@
     "vscode": "^1.74.0"
   },
   "categories": [
-    "Other", "Visualization"
+    "Other",
+    "Visualization"
   ],
   "keywords": [
     "terraform",
@@ -22,9 +23,9 @@
     "hcl"
   ],
   "activationEvents": [
-    "onLanguage:terraform"
+    "*"
   ],
-  "main": "./build/src/extension.js",
+  "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -39,8 +40,7 @@
       "terraform-navigator": [
         {
           "id": "tfnavTree",
-          "name": "Terraform Navigator",
-          "when": "workspaceFolderCount > 0"
+          "name": "Terraform Navigator"
         }
       ]
     },
@@ -74,6 +74,12 @@
         "title": "Show Dependency Graph",
         "category": "Terraform Navigator",
         "icon": "$(circuit-board)"
+      },
+      {
+        "command": "tfnav.search",
+        "title": "Search Resources",
+        "category": "Terraform Navigator",
+        "icon": "$(search)"
       }
     ],
     "menus": {
@@ -85,6 +91,11 @@
         },
         {
           "command": "tfnav.switchViewMode",
+          "when": "view == tfnavTree",
+          "group": "navigation"
+        },
+        {
+          "command": "tfnav.search",
           "when": "view == tfnavTree",
           "group": "navigation"
         },
@@ -162,15 +173,17 @@
     "@types/jest": "^29.5.5",
     "@types/node": "16.x",
     "@types/vscode": "^1.74.0",
+    "copy-webpack-plugin": "^13.0.1",
     "eslint": "^9.19.0",
     "eslint-import-resolver-typescript": "^3.8.5",
     "eslint-plugin-import": "^2.31.0",
     "jest": "^29.7.0",
     "prettier": "^3.5.3",
     "ts-jest": "^29.1.1",
+    "ts-loader": "^9.5.4",
     "typescript": "^4.9.5",
     "typescript-eslint": "^8.23.0",
-    "webpack": "^5.98.0",
+    "webpack": "^5.101.3",
     "webpack-cli": "^6.0.1"
   },
   "prettier": {
