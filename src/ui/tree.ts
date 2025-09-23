@@ -130,7 +130,11 @@ export class TerraformTreeDataProvider
       // Excluded workspaces have no children
       return Promise.resolve([]);
     } else if (element.contextValue === 'resources-category') {
-      return this.getResourceKinds(element.terraformAddress);
+      if (element.terraformAddress) {
+        return this.getResourceKinds(element.terraformAddress);
+      } else {
+        return Promise.resolve([]);
+      }
     } else if (element.contextValue?.endsWith('-category')) {
       // Handle other category nodes (data-category, module-category, etc.)
       const blockType = element.contextValue.replace('-category', '');
