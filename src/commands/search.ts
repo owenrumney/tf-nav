@@ -2,6 +2,8 @@
  * Search command for quickly finding Terraform resources
  */
 
+import * as path from 'path';
+
 import * as vscode from 'vscode';
 
 import { Address, ProjectIndex } from '../types';
@@ -72,7 +74,7 @@ interface TerraformQuickPickItem extends vscode.QuickPickItem {
  * Create a quick pick item from a Terraform block address
  */
 function createQuickPickItem(address: Address): TerraformQuickPickItem | null {
-  const fileName = require('path').basename(address.file);
+  const fileName = path.basename(address.file);
 
   let label: string;
   let description: string;

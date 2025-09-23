@@ -7,11 +7,13 @@ import * as vscode from 'vscode';
  */
 export class TerraformFileCollector {
   private readonly outputChannel: vscode.OutputChannel;
+  private readonly verbose: boolean;
 
-  constructor() {
+  constructor(verbose: boolean = false) {
     this.outputChannel = vscode.window.createOutputChannel(
       'Terraform Navigator'
     );
+    this.verbose = verbose;
   }
 
   /**
@@ -21,14 +23,20 @@ export class TerraformFileCollector {
   async findTfFiles(): Promise<string[]> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
-      this.outputChannel.appendLine('No workspace folders found');
+      this.log('No workspace folders found', true);
       return [];
     }
 
     const config = vscode.workspace.getConfiguration('tfnav');
-    const configuredIgnorePatterns = config.get<string[]>('ignore', ['**/.terraform/**']);
-    const includeTerraformCache = config.get<boolean>('includeTerraformCache', false);
-    
+    const configuredIgnorePatterns = config.get<string[]>('ignore', [
+      '**/.terraform/**',
+    ]);
+    const includeTerraformCache = config.get<boolean>(
+      'includeTerraformCache',
+      false
+    );
+    const excludedWorkspaces = config.get<string[]>('excludedWorkspaces', []);
+
     // If includeTerraformCache is false, ensure .terraform is in ignore patterns
     let ignorePatterns = [...configuredIgnorePatterns];
     if (!includeTerraformCache) {
@@ -41,21 +49,30 @@ export class TerraformFileCollector {
       }
     } else {
       // If includeTerraformCache is true, remove .terraform patterns from ignore list
-      ignorePatterns = ignorePatterns.filter(pattern => 
-        !pattern.includes('.terraform')
+      ignorePatterns = ignorePatterns.filter(
+        (pattern) => !pattern.includes('.terraform')
       );
     }
 
-    this.outputChannel.appendLine('Starting Terraform file discovery...');
-    this.outputChannel.appendLine(
-      `Ignore patterns: ${JSON.stringify(ignorePatterns)}`
-    );
+    this.log('Starting Terraform file discovery...');
+    this.log(`Ignore patterns: ${JSON.stringify(ignorePatterns)}`);
 
     const allFiles: string[] = [];
 
     for (const workspaceFolder of workspaceFolders) {
       const workspacePath = workspaceFolder.uri.fsPath;
-      this.outputChannel.appendLine(`Scanning workspace: ${workspacePath}`);
+
+      // Skip excluded workspaces
+      const isExcluded =
+        excludedWorkspaces.includes(workspaceFolder.name) ||
+        excludedWorkspaces.includes(workspacePath);
+
+      if (isExcluded) {
+        this.log(`Skipping excluded workspace: ${workspaceFolder.name}`, true);
+        continue;
+      }
+
+      this.log(`Scanning workspace: ${workspacePath}`);
 
       try {
         // Find .tf files
@@ -77,18 +94,22 @@ export class TerraformFileCollector {
         ];
 
         allFiles.push(...workspaceFiles);
-        this.outputChannel.appendLine(
-          `Found ${workspaceFiles.length} Terraform files in ${workspaceFolder.name}`
+        this.log(
+          `Found ${workspaceFiles.length} Terraform files in ${workspaceFolder.name}`,
+          true
         );
 
-        // Log each file for debugging
-        workspaceFiles.forEach((file) => {
-          const relativePath = path.relative(workspacePath, file);
-          this.outputChannel.appendLine(`  - ${relativePath}`);
-        });
+        // Log each file for debugging (verbose only)
+        if (this.verbose) {
+          workspaceFiles.forEach((file) => {
+            const relativePath = path.relative(workspacePath, file);
+            this.log(`  - ${relativePath}`);
+          });
+        }
       } catch (error) {
-        this.outputChannel.appendLine(
-          `Error scanning workspace ${workspaceFolder.name}: ${error}`
+        this.log(
+          `Error scanning workspace ${workspaceFolder.name}: ${error}`,
+          true
         );
       }
     }
@@ -96,9 +117,7 @@ export class TerraformFileCollector {
     // Sort files for consistent ordering
     allFiles.sort();
 
-    this.outputChannel.appendLine(
-      `Total Terraform files discovered: ${allFiles.length}`
-    );
+    this.log(`Total Terraform files discovered: ${allFiles.length}`, true);
     this.outputChannel.hide();
 
     return allFiles;
@@ -146,13 +165,22 @@ export class TerraformFileCollector {
   dispose(): void {
     this.outputChannel.dispose();
   }
+
+  /**
+   * Log a message if verbose logging is enabled or for important messages
+   */
+  private log(message: string, forceLog: boolean = false): void {
+    if (this.verbose || forceLog) {
+      this.outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
+    }
+  }
 }
 
 /**
  * Convenience function to find Terraform files
  */
-export async function findTfFiles(): Promise<string[]> {
-  const collector = new TerraformFileCollector();
+export async function findTfFiles(verbose: boolean = false): Promise<string[]> {
+  const collector = new TerraformFileCollector(verbose);
   try {
     return await collector.findTfFiles();
   } finally {

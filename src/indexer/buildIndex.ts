@@ -5,6 +5,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import * as vscode from 'vscode';
+
 import { extractReferenceEdges } from '../graph/refs';
 import { Address, ProjectIndex, ParserConfig } from '../types';
 
@@ -110,19 +112,11 @@ export async function buildIndex(
     ? files.slice(0, options.maxFiles)
     : files;
 
-  if (options.verbose) {
-    console.log(`Building index for ${filesToProcess.length} files...`);
-  }
-
   // Parse each file
   for (let i = 0; i < filesToProcess.length; i++) {
     const filePath = filesToProcess[i];
 
     try {
-      if (options.verbose) {
-        console.log(`Parsing: ${filePath}`);
-      }
-
       // Report progress
       if (options.progressCallback) {
         options.progressCallback(i, filesToProcess.length, filePath);
@@ -206,69 +200,68 @@ export async function buildIndex(
     );
   }
 
-  if (options.verbose) {
-    console.log(
-      `Index built: ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`
-    );
-    console.log(
-      'Block type distribution:',
-      Object.fromEntries(result.stats.blockTypeCounts)
-    );
-    console.log(`Build time: ${result.stats.buildTimeMs}ms`);
-    console.log(`Reference edges: ${result.index.refs?.length || 0}`);
-  }
-
   return result;
 }
 
 /**
- * Remove duplicate blocks based on their logical identity
+ * Remove duplicate blocks based on their logical identity while keeping workspace context
  * @param index The project index to deduplicate
+ * @param workspaceDir The workspace directory to make deduplication workspace-aware
  */
-function deduplicateBlocks(index: ProjectIndex): void {
-  console.log(`[Deduplication] Starting with ${index.blocks.length} blocks`);
-  
+function deduplicateBlocks(index: ProjectIndex, workspaceDir?: string): void {
   const uniqueBlocks = new Map<string, Address>();
-  
+
+  // Get workspace folder paths for context detection
+  const workspaceFolders = vscode.workspace.workspaceFolders || [];
+  const workspacePaths = workspaceFolders.map(
+    (folder: vscode.WorkspaceFolder) => folder.uri.fsPath
+  );
+
   for (const block of index.blocks) {
     // Create a unique key based on the block's logical identity
-    // Use blockType, kind, name, and module path to identify duplicates
+    // Include workspace directory to prevent cross-workspace deduplication
     const modulePath = block.modulePath.join('.');
-    const key = `${block.blockType}:${block.kind || ''}:${block.name || ''}:${modulePath}`;
-    
+
+    // Determine which workspace this block belongs to
+    let blockWorkspace = workspaceDir || '';
+    if (!blockWorkspace && workspacePaths.length > 1) {
+      // Multi-root workspace: find which workspace contains this file
+      for (const wsPath of workspacePaths) {
+        if (block.file.startsWith(wsPath)) {
+          blockWorkspace = wsPath;
+          break;
+        }
+      }
+    }
+
+    const workspacePrefix = blockWorkspace ? `${blockWorkspace}:` : '';
+    const key = `${workspacePrefix}${block.blockType}:${block.kind || ''}:${block.name || ''}:${modulePath}`;
+
     const existing = uniqueBlocks.get(key);
     if (existing) {
       // We have a duplicate - prefer the one NOT from .terraform
       const blockFromTerraform = block.file.includes('.terraform');
       const existingFromTerraform = existing.file.includes('.terraform');
-      
+
       if (blockFromTerraform && !existingFromTerraform) {
         // Keep existing (prefer source over cache)
-        console.log(`[Deduplication] Skipping duplicate from .terraform: ${key} in ${block.file}`);
         continue;
       } else if (!blockFromTerraform && existingFromTerraform) {
         // Replace existing with source version
-        console.log(`[Deduplication] Replacing .terraform version with source: ${key} from ${block.file}`);
         uniqueBlocks.set(key, block);
       } else {
         // Both from same type of source, prefer the one with shorter file path (more likely to be primary)
         if (block.file.length < existing.file.length) {
-          console.log(`[Deduplication] Replacing with shorter path: ${key} from ${block.file}`);
           uniqueBlocks.set(key, block);
-        } else {
-          console.log(`[Deduplication] Keeping existing: ${key} in ${existing.file}`);
         }
       }
     } else {
       uniqueBlocks.set(key, block);
     }
   }
-  
+
   // Replace the blocks array with deduplicated blocks
-  const originalCount = index.blocks.length;
   index.blocks = Array.from(uniqueBlocks.values());
-  
-  console.log(`[Deduplication] Finished with ${index.blocks.length} unique blocks (removed ${originalCount - index.blocks.length} duplicates)`);
 }
 
 /**
@@ -415,29 +408,17 @@ async function resolveModules(
     (block) => block.blockType === 'module' && block.source
   );
 
-  console.log(`[ModuleResolver] Found ${moduleBlocks.length} module blocks with sources`);
-  for (const block of moduleBlocks) {
-    console.log(`[ModuleResolver] Module: ${block.name} -> ${block.source}`);
-  }
-
   for (const moduleBlock of moduleBlocks) {
     if (!moduleBlock.source) continue;
 
     try {
       // Resolve the module source
       const baseDir = path.dirname(moduleBlock.file);
-      console.log(`[ModuleResolver] Resolving ${moduleBlock.name} from baseDir: ${baseDir}`);
       const resolution = resolveModuleSource(moduleBlock.source, baseDir);
 
-      console.log(`[ModuleResolver] Resolution result for ${moduleBlock.name}:`, resolution);
-
       if (resolution.resolved && resolution.modulePath) {
-        console.log(`[ModuleResolver] Resolving module: ${moduleBlock.name} -> ${resolution.modulePath}`);
-
         // Find all Terraform files in the module
         const moduleFiles = findModuleFiles(resolution.modulePath);
-
-        console.log(`[ModuleResolver] Found ${moduleFiles.length} files in module: ${moduleFiles.join(', ')}`);
 
         // Parse each module file
         for (const moduleFile of moduleFiles) {
@@ -447,10 +428,11 @@ async function resolveModules(
             // Create parser config with updated module path
             const moduleConfig: ParserConfig = {
               ...options,
-              modulePath: [...(moduleBlock.modulePath || []), `module.${moduleBlock.name}`],
+              modulePath: [
+                ...(moduleBlock.modulePath || []),
+                `module.${moduleBlock.name}`,
+              ],
             };
-
-            console.log(`[ModuleResolver] Parsing ${moduleFile} with modulePath: ${JSON.stringify(moduleConfig.modulePath)}`);
 
             const parseResult = await TerraformParserFactory.parseFile(
               moduleFile,
@@ -461,26 +443,25 @@ async function resolveModules(
             // Add parsed blocks to the index
             index.blocks.push(...parseResult.blocks);
 
-            console.log(`[ModuleResolver] Added ${parseResult.blocks.length} blocks from ${path.relative(baseDir, moduleFile)}`);
-            for (const block of parseResult.blocks) {
-              console.log(`  - ${block.blockType} ${block.kind || ''} ${block.name || ''} (modulePath: ${JSON.stringify(block.modulePath)})`);
-            }
-
             // Handle parse errors
             if (parseResult.errors.length > 0 && options.verbose) {
               for (const error of parseResult.errors) {
-                console.warn(`  Parse error in ${path.relative(baseDir, moduleFile)}: ${error.message}`);
+                console.warn(
+                  `  Parse error in ${path.relative(baseDir, moduleFile)}: ${error.message}`
+                );
               }
             }
           } catch (error) {
-            console.warn(`[ModuleResolver] Failed to parse module file ${path.relative(baseDir, moduleFile)}: ${error}`);
+            console.warn(
+              `[ModuleResolver] Failed to parse module file ${path.relative(baseDir, moduleFile)}: ${error}`
+            );
           }
         }
-      } else {
-        console.log(`[ModuleResolver] Could not resolve module: ${moduleBlock.name} (${resolution.error})`);
       }
     } catch (error) {
-      console.warn(`[ModuleResolver] Failed to resolve module ${moduleBlock.name}: ${error}`);
+      console.warn(
+        `[ModuleResolver] Failed to resolve module ${moduleBlock.name}: ${error}`
+      );
     }
   }
 }

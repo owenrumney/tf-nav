@@ -251,7 +251,12 @@ export class HCL2Parser implements TerraformParser {
           // Extract source from module configuration
           let source: string | undefined;
           const moduleConfig = moduleConfigArray[0];
-          if (moduleConfig && typeof moduleConfig === 'object' && moduleConfig !== null && 'source' in moduleConfig) {
+          if (
+            moduleConfig &&
+            typeof moduleConfig === 'object' &&
+            moduleConfig !== null &&
+            'source' in moduleConfig
+          ) {
             const configObj = moduleConfig as Record<string, unknown>;
             if (typeof configObj.source === 'string') {
               source = configObj.source;
@@ -393,7 +398,12 @@ export class HCL2Parser implements TerraformParser {
       for (const [moduleName, moduleConfig] of Object.entries(parsed.module)) {
         // Extract source from module configuration
         let source: string | undefined;
-        if (moduleConfig && typeof moduleConfig === 'object' && moduleConfig !== null && 'source' in moduleConfig) {
+        if (
+          moduleConfig &&
+          typeof moduleConfig === 'object' &&
+          moduleConfig !== null &&
+          'source' in moduleConfig
+        ) {
           const configObj = moduleConfig as Record<string, unknown>;
           if (typeof configObj.source === 'string') {
             source = configObj.source;
@@ -415,9 +425,7 @@ export class HCL2Parser implements TerraformParser {
 
     // Extract variable blocks
     if (parsed.variable && config.includeVariables !== false) {
-      for (const [variableName] of Object.entries(
-        parsed.variable
-      )) {
+      for (const [variableName] of Object.entries(parsed.variable)) {
         blocks.push(
           this.createAddress({
             blockType: 'variable',

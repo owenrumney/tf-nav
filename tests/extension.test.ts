@@ -1,5 +1,6 @@
 // Tests for main extension functionality
 import * as vscode from 'vscode';
+
 import { TerraformFileCollector } from '../src/indexer/files';
 
 // Mock the extension module
@@ -160,6 +161,22 @@ describe('Extension Integration', () => {
 
   describe('Error Scenarios', () => {
     it('should handle workspace.findFiles errors', async () => {
+      // Ensure proper config mock
+      (global as any).mockVSCode.workspace.getConfiguration.mockReturnValue({
+        get: jest.fn((key: string, defaultValue?: any) => {
+          if (key === 'ignore') {
+            return ['**/.terraform/**'];
+          }
+          if (key === 'excludedWorkspaces') {
+            return [];
+          }
+          if (key === 'includeTerraformCache') {
+            return false;
+          }
+          return defaultValue;
+        }),
+      });
+
       (global as any).mockVSCode.workspace.findFiles.mockRejectedValue(
         new Error('Mock file system error')
       );

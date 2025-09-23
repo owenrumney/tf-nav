@@ -36,6 +36,7 @@ const mockVSCode = {
     createOutputChannel: jest.fn().mockReturnValue({
       appendLine: jest.fn(),
       show: jest.fn(),
+      hide: jest.fn(),
       dispose: jest.fn(),
     }),
     createStatusBarItem: jest.fn().mockReturnValue({

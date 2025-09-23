@@ -1,10 +1,8 @@
- 
 /**
  * Webview panel for Terraform dependency graph visualization
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 
 import * as vscode from 'vscode';
 
@@ -13,19 +11,20 @@ import { Address, Edge, ProjectIndex } from '../types';
 import { getNeighborsWithDepth } from './refs';
 
 /**
- * Message data types for webview communication
- */
-interface MessageData {
-  address?: Address;
-  depth?: number;
-}
-
-/**
  * Message types for webview communication
  */
 interface WebviewMessage {
-  type: 'ready' | 'nodeClick' | 'reveal' | 'refresh' | 'copyAddress' | 'focus' | 'back' | 'forward' | 'depthChange';
-  data?: MessageData;
+  type:
+    | 'ready'
+    | 'nodeClick'
+    | 'reveal'
+    | 'refresh'
+    | 'copyAddress'
+    | 'focus'
+    | 'back'
+    | 'forward'
+    | 'depthChange';
+  data?: { type?: string; address?: Address; depth?: number };
 }
 
 /**
@@ -63,15 +62,18 @@ export class TerraformGraphWebview {
   private currentIndex: ProjectIndex | null = null;
   private currentFocus: Address | null = null;
   private workspaceRoot: string | null = null;
-  private currentDepth: number = 5; // Default depth
-  
+  private currentDepth: number = 2; // Default depth
+
   // Navigation history
   private navigationHistory: (Address | null)[] = [];
   private currentHistoryIndex: number = -1;
 
   constructor(private context: vscode.ExtensionContext) {
     // Get workspace root
-    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    if (
+      vscode.workspace.workspaceFolders &&
+      vscode.workspace.workspaceFolders.length > 0
+    ) {
       this.workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
     }
   }
@@ -83,18 +85,21 @@ export class TerraformGraphWebview {
     if (!this.workspaceRoot) {
       return absolutePath.split('/').pop() || absolutePath;
     }
-    
+
     if (absolutePath.startsWith(this.workspaceRoot)) {
       return absolutePath.substring(this.workspaceRoot.length + 1);
     }
-    
+
     return absolutePath.split('/').pop() || absolutePath;
   }
 
   /**
    * Show the graph webview panel
    */
-  public async show(index: ProjectIndex, focusAddress?: Address): Promise<void> {
+  public async show(
+    index: ProjectIndex,
+    focusAddress?: Address
+  ): Promise<void> {
     this.currentIndex = index;
     this.currentFocus = focusAddress || null;
 
@@ -113,7 +118,10 @@ export class TerraformGraphWebview {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
+          // Allow loading local resources if needed
+          this.context.extensionUri,
           vscode.Uri.joinPath(this.context.extensionUri, 'resources'),
+          vscode.Uri.joinPath(this.context.extensionUri, 'out'),
         ],
       }
     );
@@ -148,11 +156,13 @@ export class TerraformGraphWebview {
     }
 
     const graphData = this.buildGraphData();
-    console.log(`[GraphWebview] Sending graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`);
-    
+    console.log(
+      `[GraphWebview] Sending graph data: ${graphData.nodes.length} nodes, ${graphData.edges.length} edges`
+    );
+
     this.panel.webview.postMessage({
       type: 'updateGraph',
-      data: graphData
+      data: graphData,
     });
   }
 
@@ -165,8 +175,12 @@ export class TerraformGraphWebview {
       return { nodes: [], edges: [] };
     }
 
-    console.log(`[GraphWebview] Building graph data. Index has ${this.currentIndex.blocks.length} blocks, ${this.currentIndex.refs.length} refs`);
-    console.log(`[GraphWebview] Focus address: ${this.currentFocus ? this.getNodeId(this.currentFocus) : 'none'}`);
+    console.log(
+      `[GraphWebview] Building graph data. Index has ${this.currentIndex.blocks.length} blocks, ${this.currentIndex.refs.length} refs`
+    );
+    console.log(
+      `[GraphWebview] Focus address: ${this.currentFocus ? this.getNodeId(this.currentFocus) : 'none'}`
+    );
 
     const nodes: GraphData['nodes'] = [];
     const edges: GraphData['edges'] = [];
@@ -175,16 +189,34 @@ export class TerraformGraphWebview {
     // If no focus is set, show a sample of the graph
     if (!this.currentFocus) {
       // Show a larger sample to display the many real variable references we now detect
-      const resources = this.currentIndex.blocks.filter(addr => addr.blockType === 'resource').slice(0, 8);
-      const dataSources = this.currentIndex.blocks.filter(addr => addr.blockType === 'data').slice(0, 4);
-      const modules = this.currentIndex.blocks.filter(addr => addr.blockType === 'module').slice(0, 2);
-      const variables = this.currentIndex.blocks.filter(addr => addr.blockType === 'variable').slice(0, 15); // Show more variables for real references
-      const locals = this.currentIndex.blocks.filter(addr => addr.blockType === 'locals').slice(0, 2);
-      
-      const sampleBlocks = [...resources, ...dataSources, ...modules, ...variables, ...locals];
-      
-      console.log(`[GraphWebview] Sample mode: found ${sampleBlocks.length} sample blocks`);
-      
+      const resources = this.currentIndex.blocks
+        .filter((addr) => addr.blockType === 'resource')
+        .slice(0, 8);
+      const dataSources = this.currentIndex.blocks
+        .filter((addr) => addr.blockType === 'data')
+        .slice(0, 4);
+      const modules = this.currentIndex.blocks
+        .filter((addr) => addr.blockType === 'module')
+        .slice(0, 2);
+      const variables = this.currentIndex.blocks
+        .filter((addr) => addr.blockType === 'variable')
+        .slice(0, 15); // Show more variables for real references
+      const locals = this.currentIndex.blocks
+        .filter((addr) => addr.blockType === 'locals')
+        .slice(0, 2);
+
+      const sampleBlocks = [
+        ...resources,
+        ...dataSources,
+        ...modules,
+        ...variables,
+        ...locals,
+      ];
+
+      console.log(
+        `[GraphWebview] Sample mode: found ${sampleBlocks.length} sample blocks`
+      );
+
       for (const address of sampleBlocks) {
         const nodeId = this.getNodeId(address);
         if (!addedNodes.has(nodeId)) {
@@ -192,33 +224,36 @@ export class TerraformGraphWebview {
           addedNodes.add(nodeId);
         }
       }
-      
+
       console.log(`[GraphWebview] Added ${nodes.length} sample nodes`);
-      
+
       // Add edges between sample nodes
       for (const edge of this.currentIndex.refs) {
         const sourceId = this.getNodeId(edge.from);
         const targetId = this.getNodeId(edge.to);
-        
+
         if (addedNodes.has(sourceId) && addedNodes.has(targetId)) {
           edges.push(this.createEdge(edge));
           console.log(`[GraphWebview] Added edge: ${sourceId} -> ${targetId}`);
         }
       }
-      
+
       console.log(`[GraphWebview] Added ${edges.length} sample edges`);
-      
     } else {
       // Show focus node and its neighbors with current depth
       const focusNodeId = this.getNodeId(this.currentFocus);
-      
+
       // Get all nodes we'll be displaying (focus + neighbors) using current depth
-      const neighbors = getNeighborsWithDepth(this.currentFocus, this.currentIndex.refs, this.currentDepth);
-      
+      const neighbors = getNeighborsWithDepth(
+        this.currentFocus,
+        this.currentIndex.refs,
+        this.currentDepth
+      );
+
       // Add focus node
       nodes.push(this.createNode(this.currentFocus, true));
       addedNodes.add(focusNodeId);
-      
+
       // Add neighbor nodes
       for (const neighbor of neighbors) {
         const neighborId = this.getNodeId(neighbor);
@@ -227,19 +262,21 @@ export class TerraformGraphWebview {
           addedNodes.add(neighborId);
         }
       }
-      
+
       // Add all edges between any of the nodes we've included (focus + neighbors)
       for (const edge of this.currentIndex.refs) {
         const sourceId = this.getNodeId(edge.from);
         const targetId = this.getNodeId(edge.to);
-        
+
         // Include edge if both source and target are in our node set
         if (addedNodes.has(sourceId) && addedNodes.has(targetId)) {
           edges.push(this.createEdge(edge));
         }
       }
-      
-      console.log(`[GraphWebview] Focus mode (depth ${this.currentDepth}): added ${neighbors.length} neighbors and ${edges.length} edges`);
+
+      console.log(
+        `[GraphWebview] Focus mode (depth ${this.currentDepth}): added ${neighbors.length} neighbors and ${edges.length} edges`
+      );
     }
 
     return { nodes, edges };
@@ -250,67 +287,70 @@ export class TerraformGraphWebview {
    */
   private getNodeId(address: Address): string {
     const parts: string[] = [];
-    
+
     if (address.modulePath.length > 0) {
       parts.push(...address.modulePath);
     }
-    
+
     switch (address.blockType) {
       case 'resource':
-        parts.push(`${address.kind || 'unknown'}.${address.name || 'unknown'}`);
+        parts.push(`${address.kind}.${address.name}`);
         break;
       case 'data':
-        parts.push(`data.${address.kind || 'unknown'}.${address.name || 'unknown'}`);
+        parts.push(`data.${address.kind}.${address.name}`);
         break;
       case 'module':
-        parts.push(`module.${address.name || 'unknown'}`);
+        parts.push(`module.${address.name}`);
         break;
       case 'variable':
-        parts.push(`var.${address.name || 'unknown'}`);
+        parts.push(`var.${address.name}`);
         break;
       case 'output':
-        parts.push(`output.${address.name || 'unknown'}`);
+        parts.push(`output.${address.name}`);
         break;
       case 'locals':
-        parts.push(`local.${address.name || 'unknown'}`);
+        parts.push(`local.${address.name}`);
         break;
     }
-    
+
     return parts.join('.');
   }
-
 
   /**
    * Get provider info from resource type
    */
-  private getProviderInfo(resourceType?: string): { provider: string; shortType: string; color?: string } {
+  private getProviderInfo(resourceType?: string): {
+    provider: string;
+    shortType: string;
+    color?: string;
+  } {
     if (!resourceType) return { provider: 'unknown', shortType: '' };
-    
+
     // Provider mapping with colors
     const providerMap: Record<string, { name: string; color: string }> = {
-      'aws_': { name: 'AWS', color: '#FF9900' },
-      'azure_': { name: 'Azure', color: '#0078D4' },
-      'azurerm_': { name: 'Azure', color: '#0078D4' },
-      'azuread_': { name: 'Azure AD', color: '#0078D4' },
-      'google_': { name: 'GCP', color: '#4285F4' },
-      'gcp_': { name: 'GCP', color: '#4285F4' },
-      'digitalocean_': { name: 'DO', color: '#0080FF' },
-      'kubernetes_': { name: 'K8s', color: '#326CE5' },
-      'k8s_': { name: 'K8s', color: '#326CE5' },
-      'helm_': { name: 'Helm', color: '#0F1689' },
-      'docker_': { name: 'Docker', color: '#2496ED' },
-      'vault_': { name: 'Vault', color: '#000000' },
-      'consul_': { name: 'Consul', color: '#CA2171' },
-      'cloudflare_': { name: 'CF', color: '#F38020' },
-      'datadog_': { name: 'DD', color: '#632CA6' },
-      'github_': { name: 'GitHub', color: '#181717' },
-      'gitlab_': { name: 'GitLab', color: '#FC6D26' },
-      'random_': { name: 'Random', color: '#95A5A6' },
-      'time_': { name: 'Time', color: '#95A5A6' },
-      'local_': { name: 'Local', color: '#95A5A6' },
-      'null_': { name: 'Null', color: '#95A5A6' }
+      aws_: { name: 'AWS', color: '#FF9900' },
+      azure_: { name: 'Azure', color: '#0078D4' },
+      azurerm_: { name: 'Azure', color: '#0078D4' },
+      azuread_: { name: 'Azure AD', color: '#0078D4' },
+      google_: { name: 'GCP', color: '#4285F4' },
+      gcp_: { name: 'GCP', color: '#4285F4' },
+      digitalocean_: { name: 'DO', color: '#0080FF' },
+      kubernetes_: { name: 'K8s', color: '#326CE5' },
+      k8s_: { name: 'K8s', color: '#326CE5' },
+      helm_: { name: 'Helm', color: '#0F1689' },
+      docker_: { name: 'Docker', color: '#2496ED' },
+      vault_: { name: 'Vault', color: '#000000' },
+      consul_: { name: 'Consul', color: '#CA2171' },
+      cloudflare_: { name: 'CF', color: '#F38020' },
+      datadog_: { name: 'DD', color: '#632CA6' },
+      github_: { name: 'GitHub', color: '#181717' },
+      gitlab_: { name: 'GitLab', color: '#FC6D26' },
+      random_: { name: 'Random', color: '#95A5A6' },
+      time_: { name: 'Time', color: '#95A5A6' },
+      local_: { name: 'Local', color: '#95A5A6' },
+      null_: { name: 'Null', color: '#95A5A6' },
     };
-    
+
     // Find matching provider
     for (const [prefix, info] of Object.entries(providerMap)) {
       if (resourceType.startsWith(prefix)) {
@@ -318,11 +358,11 @@ export class TerraformGraphWebview {
         return {
           provider: info.name,
           shortType: shortened.length >= 3 ? shortened : resourceType,
-          color: info.color
+          color: info.color,
         };
       }
     }
-    
+
     // Unknown provider - keep original
     return { provider: 'Custom', shortType: resourceType };
   }
@@ -337,36 +377,39 @@ export class TerraformGraphWebview {
   /**
    * Create a graph node from an address
    */
-  private createNode(address: Address, isFocus: boolean = false): GraphData['nodes'][0] {
+  private createNode(
+    address: Address,
+    isFocus: boolean = false
+  ): GraphData['nodes'][0] {
     const id = this.getNodeId(address);
     let label = '';
     let color = '#666';
 
     switch (address.blockType) {
       case 'resource': {
-        const resourceInfo = this.getProviderInfo(address.kind || undefined);
-        label = `${address.kind || 'resource'}.${address.name || 'unknown'}`;
+        const resourceInfo = this.getProviderInfo(address.kind);
+        label = `${resourceInfo.shortType || 'resource'}.${address.name}`;
         // Use provider color if available, otherwise default to blue
-        color = isFocus ? '#e74c3c' : (resourceInfo.color || '#3498db');
+        color = isFocus ? '#e74c3c' : resourceInfo.color || '#3498db';
         break;
       }
       case 'data': {
-        const dataInfo = this.getProviderInfo(address.kind || undefined);
-        label = `${address.kind || 'data'}.${address.name || 'unknown'}`;
+        const dataInfo = this.getProviderInfo(address.kind);
+        label = `${dataInfo.shortType || 'data'}.${address.name}`;
         // Use provider color if available, otherwise default to orange
-        color = isFocus ? '#e67e22' : (dataInfo.color || '#f39c12');
+        color = isFocus ? '#e67e22' : dataInfo.color || '#f39c12';
         break;
       }
       case 'module':
-        label = `${address.name || 'unknown'}`;
+        label = `${address.name}`;
         color = isFocus ? '#8e44ad' : '#9b59b6'; // Purple for modules
         break;
       case 'variable':
-        label = `${address.name || 'unknown'}`; // Clean variable name
+        label = `${address.name}`; // Clean variable name
         color = isFocus ? '#27ae60' : '#2ecc71'; // Green for variables
         break;
       case 'output':
-        label = `${address.name || 'unknown'}`;
+        label = `${address.name}`;
         color = isFocus ? '#16a085' : '#1abc9c'; // Teal for outputs
         break;
       case 'locals':
@@ -375,7 +418,7 @@ export class TerraformGraphWebview {
         color = isFocus ? '#c0392b' : '#e74c3c'; // Red for locals
         break;
       default:
-        label = (address.name || address.blockType || 'unknown');
+        label = address.name || address.blockType;
         color = isFocus ? '#34495e' : '#95a5a6'; // Gray for unknown
     }
 
@@ -388,18 +431,21 @@ export class TerraformGraphWebview {
         color,
         relativePath: this.getRelativePath(address.file),
         // Add cluster info for positioning but don't use parent relationship
-        cluster: address.blockType
-      }
+        cluster: address.blockType,
+      },
     };
   }
 
   /**
    * Create a cluster container node
    */
-  private createClusterNode(clusterId: string, blockType: string): GraphData['nodes'][0] {
+  private createClusterNode(
+    clusterId: string,
+    blockType: string
+  ): GraphData['nodes'][0] {
     let label = '';
     let color = '#f8f9fa';
-    
+
     switch (blockType) {
       case 'variable':
         label = 'Variables';
@@ -429,14 +475,14 @@ export class TerraformGraphWebview {
         label = 'Other';
         color = '#f5f5f5';
     }
-    
+
     return {
       data: {
         id: clusterId,
         label,
         type: 'cluster',
-        color
-      }
+        color,
+      },
     };
   }
 
@@ -469,7 +515,7 @@ export class TerraformGraphWebview {
     const sourceId = this.getNodeId(edge.from);
     const targetId = this.getNodeId(edge.to);
     const edgeId = `${sourceId}->${targetId}`;
-    
+
     // Create descriptive edge label based on target type
     let label = '';
     if (edge.attributes?.referenceType) {
@@ -495,15 +541,15 @@ export class TerraformGraphWebview {
     } else {
       label = edge.type || 'reference';
     }
-    
+
     return {
       data: {
         id: edgeId,
         source: sourceId,
         target: targetId,
         label: label,
-        type: edge.type
-      }
+        type: edge.type,
+      },
     };
   }
 
@@ -519,11 +565,14 @@ export class TerraformGraphWebview {
         break;
 
       case 'nodeClick':
-        // Node was clicked, potentially change focus
+        // Node was clicked - do NOT change focus or re-render.
+        // We keep highlight/dim purely client-side per user requirement.
+        // Intentionally no-op besides optional telemetry/logging.
         if (message.data && message.data.address) {
-          this.addToHistory(message.data.address);
-          this.currentFocus = message.data.address;
-          this.updateGraph();
+          console.log(
+            '[GraphWebview] nodeClick received for',
+            this.getNodeId(message.data.address)
+          );
         }
         break;
 
@@ -571,12 +620,12 @@ export class TerraformGraphWebview {
           this.currentDepth = message.data.depth;
           console.log(`[GraphWebview] Depth changed to: ${this.currentDepth}`);
           this.updateGraph(); // Refresh graph with new depth
-          
+
           // Send confirmation back to webview
           if (this.panel) {
             this.panel.webview.postMessage({
               type: 'depthChange',
-              data: { depth: this.currentDepth }
+              data: { depth: this.currentDepth },
             });
           }
         }
@@ -590,7 +639,9 @@ export class TerraformGraphWebview {
   private async revealAddressInEditor(address: Address): Promise<void> {
     try {
       // Open the file
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(address.file));
+      const document = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(address.file)
+      );
       const editor = await vscode.window.showTextDocument(document);
 
       // Convert byte offset to position
@@ -601,12 +652,17 @@ export class TerraformGraphWebview {
       const startChar = startLines[startLine].length;
 
       const position = new vscode.Position(startLine, startChar);
-      
+
       // Set cursor and reveal
       editor.selection = new vscode.Selection(position, position);
-      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+      editor.revealRange(
+        new vscode.Range(position, position),
+        vscode.TextEditorRevealType.InCenter
+      );
 
-      vscode.window.showInformationMessage(`Revealed ${address.blockType} ${address.name} in editor`);
+      vscode.window.showInformationMessage(
+        `Revealed ${address.blockType} ${address.name} in editor`
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to reveal in editor: ${error}`);
     }
@@ -622,7 +678,7 @@ export class TerraformGraphWebview {
       if (address.modulePath && address.modulePath.length > 0) {
         addressString = address.modulePath.join('.') + '.';
       }
-      
+
       if (address.blockType === 'variable') {
         addressString += `var.${address.name}`;
       } else if (address.blockType === 'locals') {
@@ -638,8 +694,9 @@ export class TerraformGraphWebview {
       }
 
       await vscode.env.clipboard.writeText(addressString);
-      console.log(`[GraphWebview] Copied address to clipboard: ${addressString}`);
-      
+      console.log(
+        `[GraphWebview] Copied address to clipboard: ${addressString}`
+      );
     } catch (error) {
       console.error('Error copying address to clipboard:', error);
       vscode.window.showErrorMessage(`Failed to copy address: ${error}`);
@@ -652,22 +709,29 @@ export class TerraformGraphWebview {
   private addToHistory(focus: Address | null): void {
     // Remove any forward history if we're navigating to a new location
     if (this.currentHistoryIndex < this.navigationHistory.length - 1) {
-      this.navigationHistory = this.navigationHistory.slice(0, this.currentHistoryIndex + 1);
+      this.navigationHistory = this.navigationHistory.slice(
+        0,
+        this.currentHistoryIndex + 1
+      );
     }
-    
+
     // Add the new focus to history (avoid duplicates)
-    if (this.navigationHistory.length === 0 || 
-        JSON.stringify(this.navigationHistory[this.navigationHistory.length - 1]) !== JSON.stringify(focus)) {
+    if (
+      this.navigationHistory.length === 0 ||
+      JSON.stringify(
+        this.navigationHistory[this.navigationHistory.length - 1]
+      ) !== JSON.stringify(focus)
+    ) {
       this.navigationHistory.push(focus);
       this.currentHistoryIndex = this.navigationHistory.length - 1;
     }
-    
+
     // Limit history size to prevent memory issues
     if (this.navigationHistory.length > 50) {
       this.navigationHistory = this.navigationHistory.slice(-50);
       this.currentHistoryIndex = this.navigationHistory.length - 1;
     }
-    
+
     this.updateNavigationButtons();
   }
 
@@ -701,11 +765,12 @@ export class TerraformGraphWebview {
   private updateNavigationButtons(): void {
     if (this.panel) {
       const canGoBack = this.currentHistoryIndex > 0;
-      const canGoForward = this.currentHistoryIndex < this.navigationHistory.length - 1;
-      
+      const canGoForward =
+        this.currentHistoryIndex < this.navigationHistory.length - 1;
+
       this.panel.webview.postMessage({
         type: 'navigationState',
-        data: { canGoBack, canGoForward }
+        data: { canGoBack, canGoForward },
       });
     }
   }
@@ -714,16 +779,38 @@ export class TerraformGraphWebview {
    * Generate HTML content for the webview
    */
   private getWebviewContent(): string {
-    const htmlPath = path.join(__dirname, 'src', 'graph', 'webview.html');
-    console.log('[GraphWebview] Attempting to load webview.html from:', htmlPath);
-    try {
-      const html = fs.readFileSync(htmlPath, 'utf8');
-      console.log('[GraphWebview] Successfully loaded webview.html');
-      return html;
-    } catch (err) {
-      console.error('[GraphWebview] Failed to load webview.html:', err);
-      return `<html><body><h2>Error loading webview template</h2><pre>${err}</pre></body></html>`;
+    // Try to read the compiled/bundled HTML first
+    const outHtmlUri = vscode.Uri.joinPath(
+      this.context.extensionUri,
+      'out',
+      'src',
+      'graph',
+      'webview.html'
+    );
+
+    const srcHtmlUri = vscode.Uri.joinPath(
+      this.context.extensionUri,
+      'src',
+      'graph',
+      'webview.html'
+    );
+
+    const candidates = [outHtmlUri, srcHtmlUri];
+
+    for (const uri of candidates) {
+      try {
+        const html = fs.readFileSync(uri.fsPath, 'utf8');
+        return html;
+      } catch (e) {
+        console.error(`Failed to read webview HTML from ${uri.fsPath}:`, e);
+        // Try next candidate
+      }
     }
+
+    // Fallback minimal content if file not found
+    return `<!doctype html><html><body>
+      <p style="font-family: sans-serif; padding: 1rem;">Failed to load webview.html</p>
+    </body></html>`;
   }
 
   /**

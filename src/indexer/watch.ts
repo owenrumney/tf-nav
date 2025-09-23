@@ -2,13 +2,11 @@
  * File watcher for Terraform files with incremental index updates
  */
 
-import * as path from 'path';
-
 import * as vscode from 'vscode';
 
-import { ProjectIndex, Address, ParseResult } from '../types';
+import { ProjectIndex, Address } from '../types';
 
-import { buildIndex, BuildIndexResult } from './buildIndex';
+import { BuildIndexResult } from './buildIndex';
 import { TerraformFileCollector } from './files';
 import { TerraformParserFactory } from './parser';
 import { TerraformWorkerManager, WorkerProgressUpdate } from './worker';
