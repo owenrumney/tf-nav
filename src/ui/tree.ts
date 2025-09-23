@@ -140,7 +140,7 @@ export class TerraformTreeDataProvider
       const blockType = element.contextValue.replace('-category', '');
       return this.getBlocksForType(blockType, element.terraformAddress ?? "");
     } else if (element.contextValue === 'resource-kind-group') {
-      return this.getResourcesForKind(element.label, element.terraformAddress);
+      return this.getResourcesForKind(element.label, element.terraformAddress ?? "");
     } else if (element.contextValue === 'file-group') {
       return this.getBlocksForFile(element.terraformAddress!); // Using terraformAddress to store file path
     } else if (element.contextValue === 'directory-group') {
