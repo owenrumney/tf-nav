@@ -138,7 +138,7 @@ export class TerraformTreeDataProvider
     } else if (element.contextValue?.endsWith('-category')) {
       // Handle other category nodes (data-category, module-category, etc.)
       const blockType = element.contextValue.replace('-category', '');
-      return this.getBlocksForType(blockType, element.terraformAddress);
+      return this.getBlocksForType(blockType, element.terraformAddress ?? "");
     } else if (element.contextValue === 'resource-kind-group') {
       return this.getResourcesForKind(element.label, element.terraformAddress);
     } else if (element.contextValue === 'file-group') {
