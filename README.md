@@ -138,9 +138,9 @@ Customize the extension in your VS Code settings:
 
   // Files/directories to ignore (supports glob patterns)
   "tfnav.ignore": [
-    "**/.terraform/**",        // Excluded by default for performance
-    "**/terraform.tfstate*",   // State files
-    "**/.terragrunt-cache/**"  // Terragrunt cache
+    "**/.terraform/**", // Excluded by default for performance
+    "**/terraform.tfstate*", // State files
+    "**/.terragrunt-cache/**" // Terragrunt cache
   ]
 }
 ```
@@ -156,21 +156,25 @@ The extension can optionally parse the `.terraform` directory, which contains:
 **🚨 Performance Impact**
 
 Parsing `.terraform` directories can significantly slow down the extension, especially for:
+
 - Projects with many remote modules
 - Large provider schemas
 - Complex dependency trees
 
 **Recommendations:**
+
 - ✅ **Keep disabled** (default) for daily development work
 - ✅ **Enable temporarily** when you need to analyze downloaded module dependencies
 - ✅ **Use with caution** in monorepos or large Terraform workspaces
 
 **When to Enable:**
+
 - Debugging module dependency issues
 - Understanding how downloaded modules interact
 - Analyzing the full dependency graph including external modules
 
 **To Enable:**
+
 ```json
 {
   "tfnav.includeTerraformCache": true

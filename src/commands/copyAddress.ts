@@ -38,9 +38,7 @@ export async function copyTerraformAddress(
 /**
  * Register the copy address command
  */
-export function registerCopyAddressCommand(
-  context: vscode.ExtensionContext
-): vscode.Disposable {
+export function registerCopyAddressCommand(): vscode.Disposable {
   return vscode.commands.registerCommand(
     'tfnav.copyAddress',
     copyTerraformAddress

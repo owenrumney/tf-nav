@@ -214,10 +214,6 @@ function extractBlockReferences(
       sourceAddress.range.end
     );
 
-    console.log(
-      `[RefExtraction] Analyzing block ${createAddressString(sourceAddress)} (${blockContent.length} chars)`
-    );
-
     // Extract variable references from this block only
     const variableRefs = extractVariableReferencesFromContent(blockContent);
     for (const varName of variableRefs) {
@@ -301,10 +297,6 @@ export function extractReferenceEdges(index: ProjectIndex): Edge[] {
   const edges: Edge[] = [];
   const processedPairs = new Set<string>(); // Avoid duplicate edges
 
-  console.log(
-    `[RefExtraction] Starting block-scoped reference extraction for ${index.blocks.length} blocks`
-  );
-
   // First, add module containment edges (module blocks to their internal resources)
   const moduleContainmentEdges = extractModuleContainmentEdges(index);
   for (const edge of moduleContainmentEdges) {
@@ -315,8 +307,6 @@ export function extractReferenceEdges(index: ProjectIndex): Edge[] {
     }
   }
 
-  console.log(`[RefExtraction] Added ${moduleContainmentEdges.length} module containment edges`);
-
   // Second, add module-to-module reference edges (when modules reference other modules)
   const moduleToModuleEdges = extractModuleToModuleEdges(index);
   for (const edge of moduleToModuleEdges) {
@@ -326,8 +316,6 @@ export function extractReferenceEdges(index: ProjectIndex): Edge[] {
       processedPairs.add(edgeKey);
     }
   }
-
-  console.log(`[RefExtraction] Added ${moduleToModuleEdges.length} module-to-module reference edges`);
 
   for (const sourceAddress of index.blocks) {
     // Only analyze blocks that can contain references
@@ -352,10 +340,6 @@ export function extractReferenceEdges(index: ProjectIndex): Edge[] {
       }
     }
   }
-
-  console.log(
-    `[RefExtraction] Extracted ${edges.length} block-scoped reference edges`
-  );
 
   return edges;
 }
@@ -439,10 +423,6 @@ export function getNeighborsWithDepth(
     }
   }
 
-  console.log(
-    `[GraphRefs] Found ${allNeighbors.size} neighbors within ${depth} degrees of ${createAddressString(address)}`
-  );
-
   return Array.from(allNeighbors);
 }
 
@@ -451,132 +431,68 @@ export function getNeighborsWithDepth(
  */
 function extractModuleContainmentEdges(index: ProjectIndex): Edge[] {
   const edges: Edge[] = [];
-  
+
   // Find all module blocks
-  const moduleBlocks = index.blocks.filter(block => block.blockType === 'module');
-  
-  console.log(`[ModuleContainment] Found ${moduleBlocks.length} module blocks`);
-  
+  const moduleBlocks = index.blocks.filter(
+    (block) => block.blockType === 'module'
+  );
+
   for (const moduleBlock of moduleBlocks) {
     // Find all resources that belong to this module
     const modulePathString = `module.${moduleBlock.name}`;
-    
-    console.log(`[ModuleContainment] Processing module "${moduleBlock.name}" with source: "${moduleBlock.source}"`);
-    
+
     // Method 1: Check modulePath (standard approach)
-    const moduleResourcesByPath = index.blocks.filter(block => 
-      block.modulePath.length > 0 && 
-      block.modulePath[block.modulePath.length - 1] === modulePathString
+    const moduleResourcesByPath = index.blocks.filter(
+      (block) =>
+        block.modulePath.length > 0 &&
+        block.modulePath[block.modulePath.length - 1] === modulePathString
     );
-    
+
     // Method 2: Check if modulePath contains the module anywhere
-    const moduleResourcesByContains = index.blocks.filter(block => 
-      block.modulePath.some(path => path === modulePathString)
+    const moduleResourcesByContains = index.blocks.filter((block) =>
+      block.modulePath.some((path) => path === modulePathString)
     );
-    
+
     // Method 3: File path detection for local modules
     let moduleResourcesByFile: Address[] = [];
-    
+
     // Check if this is a local module (source starts with ./ or ../)
-    const isLocalModule = moduleBlock.source && (
-      moduleBlock.source.startsWith('./') || 
-      moduleBlock.source.startsWith('../')
-    );
-    
+    const isLocalModule =
+      moduleBlock.source &&
+      (moduleBlock.source.startsWith('./') ||
+        moduleBlock.source.startsWith('../'));
+
     if (isLocalModule && moduleBlock.source) {
-      // For local modules, use file path detection
-      console.log(`[ModuleContainment] "${moduleBlock.name}" is a local module, using file path detection`);
-      
       // Get the expected directory path from the module source
       let expectedPath = moduleBlock.source;
       if (expectedPath.startsWith('./')) {
         expectedPath = expectedPath.substring(2); // Remove './'
       }
-      
-      moduleResourcesByFile = index.blocks.filter(block => {
+
+      moduleResourcesByFile = index.blocks.filter((block) => {
         // Skip the module block itself and blocks without files
         if (block.blockType === 'module' || !block.file) return false;
-        
+
         // Check if the block's file is in the expected module directory
         return block.file.includes(expectedPath);
       });
-      
-      console.log(`[ModuleContainment] Local module "${moduleBlock.name}" file path detection found ${moduleResourcesByFile.length} resources in path "${expectedPath}"`);
     } else {
-      console.log(`[ModuleContainment] "${moduleBlock.name}" is not a local module (source: "${moduleBlock.source}"), skipping file path detection`);
+      console.warn(
+        `[ModuleContainment] "${moduleBlock.name}" is not a local module (source: "${moduleBlock.source}"), skipping file path detection`
+      );
     }
-    
-    console.log(`[ModuleContainment] Module "${moduleBlock.name}" - Found by modulePath: ${moduleResourcesByPath.length}, by contains: ${moduleResourcesByContains.length}, by file path: ${moduleResourcesByFile.length}`);
-    
+
     // Use the method that finds the most resources, preferring modulePath approach
     let moduleResources: Address[] = [];
-    let detectionMethod = '';
-    
+
     if (moduleResourcesByPath.length > 0) {
       moduleResources = moduleResourcesByPath;
-      detectionMethod = 'modulePath';
     } else if (moduleResourcesByContains.length > 0) {
       moduleResources = moduleResourcesByContains;
-      detectionMethod = 'contains';
     } else if (moduleResourcesByFile.length > 0) {
       moduleResources = moduleResourcesByFile;
-      detectionMethod = 'file path';
     }
-    
-    console.log(`[ModuleContainment] Module "${moduleBlock.name}" contains ${moduleResources.length} resources (using ${detectionMethod} method)`);
-    
-    // Special debugging for database module
-    if (moduleBlock.name === 'database') {
-      console.log(`[ModuleContainment] DETAILED DEBUGGING FOR DATABASE MODULE:`);
-      console.log(`[ModuleContainment] Database module source: "${moduleBlock.source}"`);
-      console.log(`[ModuleContainment] Method 1 (modulePath): Found ${moduleResourcesByPath.length} resources`);
-      console.log(`[ModuleContainment] Method 2 (contains): Found ${moduleResourcesByContains.length} resources`);
-      console.log(`[ModuleContainment] Method 3 (file path): Found ${moduleResourcesByFile.length} resources`);
-      
-      // Show which resources were found by file path method
-      if (moduleResourcesByFile.length > 0) {
-        console.log(`[ModuleContainment] Resources found by file path method:`);
-        moduleResourcesByFile.forEach(resource => {
-          console.log(`[ModuleContainment]   - ${resource.blockType}.${resource.kind}.${resource.name} from ${resource.file}`);
-        });
-      }
-      
-      // Show which files the database module should match
-      console.log(`[ModuleContainment] Database module should match files containing: "modules/rds"`);
-      const allRdsFiles = index.blocks.filter(block => 
-        block.file && block.file.includes('modules/rds') && block.blockType !== 'module'
-      );
-      console.log(`[ModuleContainment] Found ${allRdsFiles.length} blocks in RDS directory:`);
-      allRdsFiles.forEach(block => {
-        console.log(`[ModuleContainment]   - ${block.blockType}.${block.kind || ''}.${block.name || ''} in ${block.file}`);
-      });
-    }
-    
-    if (moduleResources.length === 0) {
-      console.log(`[ModuleContainment] No resources found for module "${moduleBlock.name}". Expected modulePath ending: "${modulePathString}"`);
-      console.log(`[ModuleContainment] Module block details - source: "${moduleBlock.source}", file: "${moduleBlock.file}"`);
-      
-      // Debug: Show ALL blocks that might be related
-      console.log(`[ModuleContainment] All blocks in the project:`);
-      for (const block of index.blocks) {
-        if (block.blockType !== 'module') {
-          console.log(`[ModuleContainment] Block: ${block.blockType}.${block.kind || ''}.${block.name || ''}, modulePath: [${block.modulePath.join(', ')}], file: ${block.file}`);
-        }
-      }
-      
-      // Special check for database-related blocks
-      console.log(`[ModuleContainment] Looking specifically for database-related blocks:`);
-      const dbBlocks = index.blocks.filter(block => 
-        block.name?.includes('db') || 
-        block.name?.includes('database') || 
-        block.file?.includes('rds') ||
-        block.file?.includes('database')
-      );
-      for (const block of dbBlocks) {
-        console.log(`[ModuleContainment] DB-related block: ${block.blockType}.${block.kind || ''}.${block.name || ''}, modulePath: [${block.modulePath.join(', ')}], file: ${block.file}`);
-      }
-    }
-    
+
     // Create containment edges from module to each of its resources
     for (const resource of moduleResources) {
       edges.push({
@@ -585,14 +501,12 @@ function extractModuleContainmentEdges(index: ProjectIndex): Edge[] {
         type: 'contains',
         attributes: {
           referenceType: 'module_containment',
-          relationship: 'contains'
-        }
+          relationship: 'contains',
+        },
       });
-      
-      console.log(`[ModuleContainment] Added containment edge: ${moduleBlock.blockType}.${moduleBlock.name} -> ${resource.blockType}.${resource.kind}.${resource.name}`);
     }
   }
-  
+
   return edges;
 }
 
@@ -601,39 +515,41 @@ function extractModuleContainmentEdges(index: ProjectIndex): Edge[] {
  */
 function extractModuleToModuleEdges(index: ProjectIndex): Edge[] {
   const edges: Edge[] = [];
-  
+
   // Find all module blocks
-  const moduleBlocks = index.blocks.filter(block => block.blockType === 'module');
-  
-  console.log(`[ModuleToModule] Found ${moduleBlocks.length} module blocks to analyze for inter-module references`);
-  
+  const moduleBlocks = index.blocks.filter(
+    (block) => block.blockType === 'module'
+  );
+
   for (const sourceModule of moduleBlocks) {
     try {
       // Read the actual file content to extract module references
       const fileContent = fs.readFileSync(sourceModule.file, 'utf8');
-      
+
       // Extract only the content for this specific module block using byte offsets
       const moduleContent = fileContent.substring(
         sourceModule.range.start,
         sourceModule.range.end
       );
-      
+
       // Extract module references from the content (e.g., module.vpc.vpc_id)
-      const moduleReferences = extractModuleReferencesFromContent(moduleContent);
-      
-      console.log(`[ModuleToModule] Module "${sourceModule.name}" references ${moduleReferences.length} other modules`);
-      
+      const moduleReferences =
+        extractModuleReferencesFromContent(moduleContent);
+
       // Find target modules and create edges
       for (const moduleRef of moduleReferences) {
         // Find the target module in our index
-        const targetModule = index.blocks.find(block => 
-          block.blockType === 'module' && 
-          block.name === moduleRef.name &&
-          // Ensure we're looking for modules in the same scope (same module path level)
-          block.modulePath.length === sourceModule.modulePath.length &&
-          block.modulePath.every((path, i) => path === sourceModule.modulePath[i])
+        const targetModule = index.blocks.find(
+          (block) =>
+            block.blockType === 'module' &&
+            block.name === moduleRef.name &&
+            // Ensure we're looking for modules in the same scope (same module path level)
+            block.modulePath.length === sourceModule.modulePath.length &&
+            block.modulePath.every(
+              (path, i) => path === sourceModule.modulePath[i]
+            )
         );
-        
+
         if (targetModule) {
           edges.push({
             from: sourceModule,
@@ -642,38 +558,43 @@ function extractModuleToModuleEdges(index: ProjectIndex): Edge[] {
             attributes: {
               referenceType: 'module_reference',
               attribute: moduleRef.attribute,
-              relationship: 'uses'
-            }
+              relationship: 'uses',
+            },
           });
-          
-          console.log(`[ModuleToModule] Added module reference edge: module.${sourceModule.name} -> module.${targetModule.name} (${moduleRef.attribute})`);
         } else {
-          console.log(`[ModuleToModule] Could not find target module "${moduleRef.name}" referenced by module "${sourceModule.name}"`);
+          console.warn(
+            `[ModuleToModule] Could not find target module "${moduleRef.name}" referenced by module "${sourceModule.name}"`
+          );
         }
       }
     } catch (error) {
-      console.warn(`[ModuleToModule] Failed to analyze module "${sourceModule.name}": ${error}`);
+      console.warn(
+        `[ModuleToModule] Failed to analyze module "${sourceModule.name}": ${error}`
+      );
     }
   }
-  
+
   return edges;
 }
 
 /**
  * Extract module references from content (e.g., module.vpc.vpc_id, module.database.endpoint)
  */
-function extractModuleReferencesFromContent(content: string): Array<{ name: string; attribute?: string }> {
-  const modulePattern = /module\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z_][a-zA-Z0-9_]*))?/g;
+function extractModuleReferencesFromContent(
+  content: string
+): Array<{ name: string; attribute?: string }> {
+  const modulePattern =
+    /module\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z_][a-zA-Z0-9_]*))?/g;
   const references: Array<{ name: string; attribute?: string }> = [];
 
   let match;
   while ((match = modulePattern.exec(content)) !== null) {
     const moduleName = match[1];
     const attribute = match[2];
-    
+
     references.push({
       name: moduleName,
-      attribute: attribute
+      attribute: attribute,
     });
   }
 

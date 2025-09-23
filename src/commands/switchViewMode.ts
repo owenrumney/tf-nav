@@ -39,9 +39,7 @@ export async function switchViewMode(): Promise<void> {
 /**
  * Register the switch view mode command
  */
-export function registerSwitchViewModeCommand(
-  context: vscode.ExtensionContext
-): vscode.Disposable {
+export function registerSwitchViewModeCommand(): vscode.Disposable {
   return vscode.commands.registerCommand(
     'tfnav.switchViewMode',
     switchViewMode

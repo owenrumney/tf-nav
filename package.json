@@ -2,7 +2,7 @@
   "name": "tf-nav",
   "displayName": "Terraform Navigator",
   "description": "Navigate Terraform configurations with a structured tree view",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "owenrumney",
   "icon": "./media/logo.png",
   "repository": {
@@ -82,6 +82,18 @@
         "title": "Search Resources",
         "category": "Terraform Navigator",
         "icon": "$(search)"
+      },
+      {
+        "command": "tfnav.excludeWorkspace",
+        "title": "Exclude Workspace",
+        "category": "Terraform Navigator",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "tfnav.includeWorkspace",
+        "title": "Include Workspace",
+        "category": "Terraform Navigator",
+        "icon": "$(eye)"
       }
     ],
     "menus": {
@@ -98,11 +110,6 @@
         },
         {
           "command": "tfnav.search",
-          "when": "view == tfnavTree",
-          "group": "navigation"
-        },
-        {
-          "command": "tfnav.showGraph",
           "when": "view == tfnavTree",
           "group": "navigation"
         }
@@ -122,6 +129,16 @@
           "command": "tfnav.showGraph",
           "when": "view == tfnavTree",
           "group": "navigation"
+        },
+        {
+          "command": "tfnav.excludeWorkspace",
+          "when": "view == tfnavTree && viewItem == workspace-folder",
+          "group": "workspace"
+        },
+        {
+          "command": "tfnav.includeWorkspace",
+          "when": "view == tfnavTree && viewItem == workspace-folder-excluded",
+          "group": "workspace"
         }
       ]
     },
@@ -156,6 +173,14 @@
           "type": "boolean",
           "default": false,
           "description": "Include files from .terraform directory in parsing (useful for analyzing downloaded modules)"
+        },
+        "tfnav.excludedWorkspaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Workspace folders to exclude from the Terraform Navigator tree view (in multi-root workspaces)"
         }
       }
     }

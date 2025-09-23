@@ -6,6 +6,7 @@ import * as path from 'path';
 
 import * as vscode from 'vscode';
 
+import { BuildIndexResult } from '../indexer/buildIndex';
 import { TerraformWatcher } from '../indexer/watch';
 import { ProjectIndex, Address, createTerraformAddress } from '../types';
 
@@ -122,14 +123,20 @@ export class TerraformTreeDataProvider
     }
 
     // Child items for expandable nodes
-    if (element.contextValue === 'resources-category') {
-      return this.getResourceKinds();
+    if (element.contextValue === 'workspace-folder') {
+      // Handle workspace folder expansion (only for non-excluded workspaces)
+      return this.getWorkspaceChildren(element.terraformAddress!); // terraformAddress stores workspace path
+    } else if (element.contextValue === 'workspace-folder-excluded') {
+      // Excluded workspaces have no children
+      return Promise.resolve([]);
+    } else if (element.contextValue === 'resources-category') {
+      return this.getResourceKinds(element.terraformAddress);
     } else if (element.contextValue?.endsWith('-category')) {
       // Handle other category nodes (data-category, module-category, etc.)
       const blockType = element.contextValue.replace('-category', '');
-      return this.getBlocksForType(blockType, element.label);
+      return this.getBlocksForType(blockType, element.terraformAddress);
     } else if (element.contextValue === 'resource-kind-group') {
-      return this.getResourcesForKind(element.label);
+      return this.getResourcesForKind(element.label, element.terraformAddress);
     } else if (element.contextValue === 'file-group') {
       return this.getBlocksForFile(element.terraformAddress!); // Using terraformAddress to store file path
     } else if (element.contextValue === 'directory-group') {
@@ -137,7 +144,7 @@ export class TerraformTreeDataProvider
     } else if (element.contextValue?.endsWith('-group')) {
       // Handle other block type groups (variable-group, output-group, etc.)
       const blockType = element.contextValue.replace('-group', '');
-      return this.getBlocksForType(blockType, element.label);
+      return this.getBlocksForType(blockType, element.terraformAddress);
     }
 
     return Promise.resolve([]);
@@ -167,7 +174,15 @@ export class TerraformTreeDataProvider
       ];
     }
 
-    // Filter blocks based on settings
+    // Check if we have multiple workspace folders
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    const isMultiRoot = workspaceFolders && workspaceFolders.length > 1;
+
+    if (isMultiRoot) {
+      return this.getWorkspaceNodes();
+    }
+
+    // Single workspace - use existing logic
     const filteredIndex = this.getFilteredIndex();
 
     if (viewMode === 'type') {
@@ -249,7 +264,8 @@ export class TerraformTreeDataProvider
   }
 
   private async getBlocksByType(
-    index: ProjectIndex
+    index: ProjectIndex,
+    workspacePath?: string
   ): Promise<TerraformTreeItem[]> {
     const typeItems: TerraformTreeItem[] = [];
 
@@ -283,7 +299,9 @@ export class TerraformTreeDataProvider
       const resourcesCategory = new TerraformTreeItem(
         `🏗️ Resources (${totalResources})`,
         vscode.TreeItemCollapsibleState.Collapsed,
-        'resources-category'
+        'resources-category',
+        undefined,
+        workspacePath // Store workspace path for context
       );
       typeItems.push(resourcesCategory);
     }
@@ -311,7 +329,9 @@ export class TerraformTreeDataProvider
         const categoryItem = new TerraformTreeItem(
           `${categoryLabel} (${blocks.length})`,
           vscode.TreeItemCollapsibleState.Collapsed,
-          `${blockType}-category`
+          `${blockType}-category`,
+          undefined,
+          workspacePath // Store workspace path for context
         );
         typeItems.push(categoryItem);
       }
@@ -336,7 +356,16 @@ export class TerraformTreeDataProvider
       {
         type: 'directory' | 'file';
         path: string;
-        children: Map<string, any>;
+        children: Map<
+          string,
+          {
+            type: 'directory' | 'file';
+            path: string;
+            children: Map<string, unknown>;
+            blocks?: Address[];
+            parent?: string;
+          }
+        >;
         blocks?: Address[];
         parent?: string;
       }
@@ -383,7 +412,7 @@ export class TerraformTreeDataProvider
     // Convert tree to TerraformTreeItem array (only root level items)
     const rootItems: TerraformTreeItem[] = [];
 
-    for (const [nodePath, node] of tree.entries()) {
+    for (const [, node] of tree.entries()) {
       // Only include root level items (no parent)
       if (!node.parent) {
         const item = this.createFileTreeItem(node, workspaceRoot);
@@ -405,7 +434,13 @@ export class TerraformTreeDataProvider
   }
 
   private createFileTreeItem(
-    node: any,
+    node: {
+      type: 'directory' | 'file';
+      path: string;
+      children: Map<string, unknown>;
+      blocks?: Address[];
+      parent?: string;
+    },
     workspaceRoot: string
   ): TerraformTreeItem {
     if (node.type === 'file') {
@@ -549,11 +584,20 @@ export class TerraformTreeDataProvider
     });
   }
 
-  private async getResourceKinds(): Promise<TerraformTreeItem[]> {
-    if (!this.currentIndex) return [];
+  private async getResourceKinds(
+    workspacePath?: string
+  ): Promise<TerraformTreeItem[]> {
+    // Determine which index to use based on workspace context
+    const index = workspacePath
+      ? this.getFilteredIndexForWorkspace(workspacePath)
+      : this.currentIndex || {
+          blocks: [],
+          byType: new Map(),
+          byFile: new Map(),
+        };
 
     const resourceKinds = new Map<string, Address[]>();
-    const resources = this.currentIndex.byType.get('resource') || [];
+    const resources = index.byType.get('resource') || [];
 
     // Group resources by kind
     for (const block of resources) {
@@ -570,7 +614,9 @@ export class TerraformTreeDataProvider
       const kindItem = new TerraformTreeItem(
         `${kind} (${blocks.length})`,
         vscode.TreeItemCollapsibleState.Collapsed,
-        'resource-kind-group'
+        'resource-kind-group',
+        undefined,
+        workspacePath // Store workspace path for context
       );
       kindItems.push(kindItem);
     }
@@ -579,29 +625,46 @@ export class TerraformTreeDataProvider
   }
 
   private async getResourcesForKind(
-    kindLabel: string
+    kindLabel: string,
+    workspacePath?: string
   ): Promise<TerraformTreeItem[]> {
-    if (!this.currentIndex) return [];
+    // Determine which index to use based on workspace context
+    const index = workspacePath
+      ? this.getFilteredIndexForWorkspace(workspacePath)
+      : this.currentIndex || {
+          blocks: [],
+          byType: new Map(),
+          byFile: new Map(),
+        };
 
     // Extract kind from label (e.g., "aws_security_group (3)" -> "aws_security_group")
     const kind = kindLabel.split(' ')[0];
 
-    const resources = this.currentIndex.byType.get('resource') || [];
+    const resources = index.byType.get('resource') || [];
     const kindResources = resources.filter(
-      (resource) => resource.kind === kind
+      (resource: Address) => resource.kind === kind
     );
 
-    return kindResources.map((resource) => this.createBlockTreeItem(resource));
+    return kindResources.map((resource: Address) =>
+      this.createBlockTreeItem(resource)
+    );
   }
 
   private async getBlocksForType(
     blockType: string,
-    typeLabel?: string
+    workspacePath?: string
   ): Promise<TerraformTreeItem[]> {
-    if (!this.currentIndex) return [];
+    // Determine which index to use based on workspace context
+    const index = workspacePath
+      ? this.getFilteredIndexForWorkspace(workspacePath)
+      : this.currentIndex || {
+          blocks: [],
+          byType: new Map(),
+          byFile: new Map(),
+        };
 
-    const blocks = this.currentIndex.byType.get(blockType) || [];
-    return blocks.map((block) => this.createBlockTreeItem(block));
+    const blocks = index.byType.get(blockType) || [];
+    return blocks.map((block: Address) => this.createBlockTreeItem(block));
   }
 
   private async getBlocksForFile(
@@ -637,8 +700,229 @@ export class TerraformTreeDataProvider
     );
   }
 
+  // Workspace support methods
+
+  /**
+   * Get workspace folder nodes for multi-root workspaces
+   */
+  private async getWorkspaceNodes(): Promise<TerraformTreeItem[]> {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+      return [];
+    }
+
+    const config = vscode.workspace.getConfiguration('tfnav');
+    const excludedWorkspaces = config.get<string[]>('excludedWorkspaces', []);
+
+    const workspaceNodes: TerraformTreeItem[] = [];
+
+    for (const folder of workspaceFolders) {
+      const workspacePath = folder.uri.fsPath;
+      const isExcluded =
+        excludedWorkspaces.includes(folder.name) ||
+        excludedWorkspaces.includes(workspacePath);
+
+      let blocksInWorkspace = 0;
+      let label = folder.name;
+      let contextValue = 'workspace-folder';
+
+      if (isExcluded) {
+        label = `${folder.name} (excluded)`;
+        contextValue = 'workspace-folder-excluded';
+      } else {
+        blocksInWorkspace = this.getBlocksForWorkspace(workspacePath).length;
+        label = `${folder.name} (${blocksInWorkspace})`;
+      }
+
+      const workspaceNode = new TerraformTreeItem(
+        label,
+        isExcluded
+          ? vscode.TreeItemCollapsibleState.None
+          : vscode.TreeItemCollapsibleState.Collapsed,
+        contextValue,
+        undefined, // no address
+        workspacePath, // store workspace path in terraformAddress for reference
+        folder.uri
+      );
+
+      workspaceNodes.push(workspaceNode);
+    }
+
+    return workspaceNodes;
+  }
+
+  /**
+   * Get children for a workspace folder
+   */
+  private async getWorkspaceChildren(
+    workspacePath: string
+  ): Promise<TerraformTreeItem[]> {
+    const config = vscode.workspace.getConfiguration('tfnav');
+    const viewMode = config.get<string>('viewMode', 'type');
+
+    const workspaceIndex = this.getFilteredIndexForWorkspace(workspacePath);
+
+    if (workspaceIndex.blocks.length === 0) {
+      return [
+        new TerraformTreeItem(
+          'No Terraform blocks found',
+          vscode.TreeItemCollapsibleState.None,
+          'info'
+        ),
+      ];
+    }
+
+    if (viewMode === 'type') {
+      return this.getBlocksByType(workspaceIndex, workspacePath);
+    } else {
+      return this.getBlocksByFileForWorkspace(workspaceIndex, workspacePath);
+    }
+  }
+
+  /**
+   * Filter blocks that belong to a specific workspace folder
+   */
+  private getBlocksForWorkspace(workspacePath: string): Address[] {
+    if (!this.currentIndex) {
+      return [];
+    }
+
+    return this.currentIndex.blocks.filter((block) =>
+      block.file.startsWith(workspacePath)
+    );
+  }
+
+  /**
+   * Get filtered index for a specific workspace
+   */
+  private getFilteredIndexForWorkspace(workspacePath: string): ProjectIndex {
+    const blocksInWorkspace = this.getBlocksForWorkspace(workspacePath);
+
+    const config = vscode.workspace.getConfiguration('tfnav');
+    const includeDataSources = config.get<boolean>('includeDataSources', true);
+
+    // Filter out data sources if configured
+    const filteredBlocks = includeDataSources
+      ? blocksInWorkspace
+      : blocksInWorkspace.filter((block) => block.blockType !== 'data');
+
+    // Build maps
+    const workspaceIndex: ProjectIndex = {
+      blocks: filteredBlocks,
+      byType: new Map(),
+      byFile: new Map(),
+    };
+
+    // Build byType map
+    for (const block of filteredBlocks) {
+      const typeBlocks = workspaceIndex.byType.get(block.blockType) || [];
+      typeBlocks.push(block);
+      workspaceIndex.byType.set(block.blockType, typeBlocks);
+    }
+
+    // Build byFile map
+    for (const block of filteredBlocks) {
+      const fileBlocks = workspaceIndex.byFile.get(block.file) || [];
+      fileBlocks.push(block);
+      workspaceIndex.byFile.set(block.file, fileBlocks);
+    }
+
+    return workspaceIndex;
+  }
+
+  /**
+   * Get blocks by file for a specific workspace (with proper relative path display)
+   */
+  private async getBlocksByFileForWorkspace(
+    index: ProjectIndex,
+    workspacePath: string
+  ): Promise<TerraformTreeItem[]> {
+    const config = vscode.workspace.getConfiguration('tfnav');
+    const groupByDirectory = config.get<boolean>('groupByDirectory', false);
+
+    if (groupByDirectory) {
+      return this.getBlocksByDirectoryForWorkspace(index, workspacePath);
+    }
+
+    const fileItems: TerraformTreeItem[] = [];
+
+    for (const [filePath, blocks] of index.byFile.entries()) {
+      // Calculate relative path from workspace
+      let displayPath = filePath;
+      if (filePath.startsWith(workspacePath)) {
+        displayPath = path.relative(workspacePath, filePath);
+      }
+
+      const fileGroup = new TerraformTreeItem(
+        `${displayPath} (${blocks.length})`,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        'file-group',
+        undefined,
+        filePath, // Store full path for getBlocksForFile
+        vscode.Uri.file(filePath)
+      );
+
+      fileItems.push(fileGroup);
+    }
+
+    // Sort by relative path
+    fileItems.sort((a, b) => a.label.localeCompare(b.label));
+
+    return fileItems;
+  }
+
+  /**
+   * Get blocks by directory for a specific workspace
+   */
+  private async getBlocksByDirectoryForWorkspace(
+    index: ProjectIndex,
+    workspacePath: string
+  ): Promise<TerraformTreeItem[]> {
+    const tree = new Map<string, { files: Set<string>; blocks: Address[] }>();
+
+    // Build directory tree
+    for (const [filePath, blocks] of index.byFile.entries()) {
+      const relativePath = path.relative(workspacePath, filePath);
+      const directoryPath = path.dirname(relativePath);
+
+      if (!tree.has(directoryPath)) {
+        tree.set(directoryPath, { files: new Set(), blocks: [] });
+      }
+
+      const node = tree.get(directoryPath)!;
+      node.files.add(relativePath);
+      node.blocks.push(...blocks);
+    }
+
+    const directoryItems: TerraformTreeItem[] = [];
+
+    for (const [directoryPath, node] of tree.entries()) {
+      const displayPath = directoryPath === '.' ? workspacePath : directoryPath;
+      const fullPath =
+        directoryPath === '.'
+          ? workspacePath
+          : path.join(workspacePath, directoryPath);
+
+      const directoryGroup = new TerraformTreeItem(
+        `${displayPath} (${node.blocks.length})`,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        'directory-group',
+        undefined,
+        fullPath,
+        vscode.Uri.file(fullPath)
+      );
+
+      directoryItems.push(directoryGroup);
+    }
+
+    // Sort by path
+    directoryItems.sort((a, b) => a.label.localeCompare(b.label));
+
+    return directoryItems;
+  }
+
   // Event handlers
-  private onIndexUpdated(result: any): void {
+  private onIndexUpdated(result: BuildIndexResult): void {
     this.currentIndex = result.index;
     this.refresh();
 

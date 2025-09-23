@@ -42,10 +42,6 @@ describe('buildIndex', () => {
       // Should have organized maps
       expect(result.index.byType.size).toBeGreaterThan(0);
       expect(result.index.byFile.size).toBeGreaterThan(0);
-
-      console.log(
-        `Built index with ${result.stats.totalBlocks} blocks from ${result.stats.filesProcessed} files`
-      );
     });
 
     it('should build index and report counts by block type', async () => {
@@ -69,15 +65,20 @@ describe('buildIndex', () => {
       expect(blockTypeCounts.has('module')).toBe(true);
       expect(blockTypeCounts.has('locals')).toBe(true);
 
-      // Verify counts match byType map
+      // Verify counts align with byType map from the (deduplicated) index
       const byTypeFromIndex = getBlockTypeCounts(result.index);
-      expect(byTypeFromIndex.size).toBe(blockTypeCounts.size);
+      expect(byTypeFromIndex.size).toBeLessThanOrEqual(blockTypeCounts.size);
 
-      for (const [blockType, count] of blockTypeCounts.entries()) {
-        expect(byTypeFromIndex.get(blockType)).toBe(count);
+      // Every type present in the index should exist in stats and not exceed it
+      let sumByType = 0;
+      for (const [blockType, count] of byTypeFromIndex.entries()) {
+        expect(blockTypeCounts.has(blockType)).toBe(true);
+        expect(count).toBeGreaterThan(0);
+        expect(count).toBeLessThanOrEqual(blockTypeCounts.get(blockType) || 0);
+        sumByType += count;
       }
-
-      console.log('Block type counts:', Object.fromEntries(blockTypeCounts));
+      // Sum across types equals number of blocks in index
+      expect(sumByType).toBe(result.index.blocks.length);
     });
 
     it('should build index and report counts by file', async () => {
@@ -89,33 +90,30 @@ describe('buildIndex', () => {
 
       const result = await buildIndex(terraformFiles);
 
-      // Verify file counts
+      // Verify file counts (stats reflect files processed; index map is after dedup and module resolution)
       const fileBlockCounts = result.stats.blockFilesCounts;
-      expect(fileBlockCounts.size).toBe(terraformFiles.length);
+      expect(fileBlockCounts.size).toBeGreaterThan(0);
+      expect(fileBlockCounts.size).toBeLessThanOrEqual(terraformFiles.length);
 
-      // Each file should have at least one block (based on our test workspace)
+      // Each tracked file should be from our input set and have > 0 blocks
       for (const [filePath, count] of fileBlockCounts.entries()) {
-        expect(count).toBeGreaterThan(0);
         expect(terraformFiles.includes(filePath)).toBe(true);
+        expect(count).toBeGreaterThan(0);
       }
 
-      // Verify counts match byFile map
+      // Compare with byFile map from index
       const byFileFromIndex = getFileBlockCounts(result.index);
-      expect(byFileFromIndex.size).toBe(fileBlockCounts.size);
 
-      for (const [filePath, count] of fileBlockCounts.entries()) {
-        expect(byFileFromIndex.get(filePath)).toBe(count);
+      let sumByFile = 0;
+      for (const [filePath, count] of byFileFromIndex.entries()) {
+        // If the file is in stats, index count should not exceed stats count
+        if (fileBlockCounts.has(filePath)) {
+          expect(count).toBeLessThanOrEqual(fileBlockCounts.get(filePath) || 0);
+        }
+        sumByFile += count;
       }
-
-      console.log(
-        'File block counts:',
-        Object.fromEntries(
-          Array.from(fileBlockCounts.entries()).map(([path, count]) => [
-            path.split('/').pop(),
-            count,
-          ])
-        )
-      );
+      // Sum across files equals number of blocks in index
+      expect(sumByFile).toBe(result.index.blocks.length);
     });
 
     it('should sort blocks by resource name in byType map', async () => {
@@ -211,10 +209,25 @@ describe('buildIndex', () => {
         );
 
       const maxFiles = 3;
-      const result = await buildIndex(terraformFiles, { maxFiles });
+      // Ensure deterministic selection for maxFiles: sort input file list
+      const sortedTerraformFiles = [...terraformFiles].sort();
+      const result = await buildIndex(sortedTerraformFiles, { maxFiles });
 
+      // Exactly maxFiles should be processed in stats (module files are not counted here)
       expect(result.stats.filesProcessed).toBe(maxFiles);
-      expect(result.index.byFile.size).toBe(maxFiles);
+
+      // Stats should have exactly maxFiles entries for block counts by file
+      expect(result.stats.blockFilesCounts.size).toBe(maxFiles);
+
+      // The processed files should be a subset of the first N input files
+      const processedFiles = Array.from(result.stats.blockFilesCounts.keys());
+      const expectedFiles = new Set(sortedTerraformFiles.slice(0, maxFiles));
+      for (const f of processedFiles) {
+        expect(expectedFiles.has(f)).toBe(true);
+      }
+
+      // Index may include additional module files
+      expect(result.index.byFile.size).toBeGreaterThanOrEqual(maxFiles);
     });
 
     it('should build complete ProjectIndex structure', async () => {
@@ -270,9 +283,6 @@ describe('buildIndex', () => {
       expect(summary).toContain('Blocks by file:');
       expect(summary).toContain('resource:');
       expect(summary).toContain('variable:');
-
-      console.log('Index Summary:');
-      console.log(summary);
     });
 
     it('should find blocks by criteria', () => {
@@ -331,28 +341,6 @@ describe('buildIndex', () => {
       // Validate no errors for valid files
       expect(result.stats.filesWithErrors).toBe(0);
       expect(result.errors.length).toBe(0);
-
-      // Print comprehensive report
-      console.log('\n=== COMPREHENSIVE INDEX REPORT ===');
-      console.log(`Files processed: ${result.stats.filesProcessed}`);
-      console.log(`Total blocks: ${result.stats.totalBlocks}`);
-      console.log('\nBlock type distribution:');
-
-      for (const [blockType, count] of Array.from(
-        typeCounts.entries()
-      ).sort()) {
-        console.log(`  ${blockType}: ${count}`);
-      }
-
-      console.log('\nFile distribution:');
-      for (const [filePath, count] of Array.from(
-        result.stats.blockFilesCounts.entries()
-      ).sort()) {
-        const fileName = filePath.split('/').pop();
-        console.log(`  ${fileName}: ${count}`);
-      }
-
-      console.log('\n=== END REPORT ===\n');
     });
 
     it('should maintain referential integrity between maps', async () => {

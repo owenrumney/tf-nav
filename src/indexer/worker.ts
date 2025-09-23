@@ -5,8 +5,6 @@
 import * as path from 'path';
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 
-import { ProjectIndex, Address, ParseResult } from '../types';
-
 import { buildIndex, BuildIndexOptions, BuildIndexResult } from './buildIndex';
 
 /**
@@ -15,7 +13,11 @@ import { buildIndex, BuildIndexOptions, BuildIndexResult } from './buildIndex';
 export interface WorkerMessage {
   type: 'build' | 'cancel' | 'result' | 'error' | 'progress';
   id: string;
-  payload?: any;
+  payload?:
+    | WorkerBuildRequest
+    | WorkerProgressUpdate
+    | BuildIndexResult
+    | string;
 }
 
 /**
@@ -108,7 +110,13 @@ export class TerraformWorkerManager {
 
           case 'error':
             this.cleanup();
-            reject(new Error(message.payload));
+            reject(
+              new Error(
+                typeof message.payload === 'string'
+                  ? message.payload
+                  : 'Unknown worker error'
+              )
+            );
             break;
 
           case 'progress':

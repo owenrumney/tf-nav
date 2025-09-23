@@ -10,14 +10,14 @@ import { TerraformFileCollector } from './indexer/files';
 import { TerraformWatcher } from './indexer/watch';
 import { ProjectIndex } from './types';
 import { TerraformStatusBar } from './ui/status';
-import { TerraformTreeDataProvider } from './ui/tree';
+import { TerraformTreeDataProvider, TerraformTreeItem } from './ui/tree';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('Terraform Navigator: Extension activating...');
 
   try {
-    // Create the file collector
-    const fileCollector = new TerraformFileCollector();
+    // Create the file collector with verbose logging disabled by default
+    const fileCollector = new TerraformFileCollector(false);
 
     // Create the file watcher
     const watcher = new TerraformWatcher(fileCollector, {
@@ -87,9 +87,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
     );
 
-    const revealCommand = registerRevealCommand(context);
-    const copyAddressCommand = registerCopyAddressCommand(context);
-    const switchViewModeCommand = registerSwitchViewModeCommand(context);
+    const revealCommand = registerRevealCommand();
+    const copyAddressCommand = registerCopyAddressCommand();
+    const switchViewModeCommand = registerSwitchViewModeCommand();
     const searchCommand = registerSearchCommand(context, () =>
       watcher.getCurrentIndex()
     );
@@ -97,6 +97,69 @@ export function activate(context: vscode.ExtensionContext) {
       context,
       graphWebview,
       () => watcher.getCurrentIndex()
+    );
+
+    // Register workspace commands
+    const excludeWorkspaceCommand = vscode.commands.registerCommand(
+      'tfnav.excludeWorkspace',
+      async (item: TerraformTreeItem) => {
+        if (item && item.terraformAddress) {
+          const workspacePath = item.terraformAddress;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          const folder = workspaceFolders?.find(
+            (f) => f.uri.fsPath === workspacePath
+          );
+
+          if (folder) {
+            const config = vscode.workspace.getConfiguration('tfnav');
+            const excludedWorkspaces = config.get<string[]>(
+              'excludedWorkspaces',
+              []
+            );
+
+            if (!excludedWorkspaces.includes(folder.name)) {
+              excludedWorkspaces.push(folder.name);
+              await config.update(
+                'excludedWorkspaces',
+                excludedWorkspaces,
+                vscode.ConfigurationTarget.Workspace
+              );
+              treeDataProvider.refresh();
+            }
+          }
+        }
+      }
+    );
+
+    const includeWorkspaceCommand = vscode.commands.registerCommand(
+      'tfnav.includeWorkspace',
+      async (item: TerraformTreeItem) => {
+        if (item && item.terraformAddress) {
+          const workspacePath = item.terraformAddress;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          const folder = workspaceFolders?.find(
+            (f) => f.uri.fsPath === workspacePath
+          );
+
+          if (folder) {
+            const config = vscode.workspace.getConfiguration('tfnav');
+            const excludedWorkspaces = config.get<string[]>(
+              'excludedWorkspaces',
+              []
+            );
+
+            const updatedExcluded = excludedWorkspaces.filter(
+              (name) => name !== folder.name
+            );
+            await config.update(
+              'excludedWorkspaces',
+              updatedExcluded,
+              vscode.ConfigurationTarget.Workspace
+            );
+            treeDataProvider.refresh();
+          }
+        }
+      }
     );
 
     // Add to subscriptions for cleanup
@@ -108,6 +171,8 @@ export function activate(context: vscode.ExtensionContext) {
       switchViewModeCommand,
       searchCommand,
       showGraphCommand,
+      excludeWorkspaceCommand,
+      includeWorkspaceCommand,
       fileCollector,
       watcher,
       treeDataProvider,

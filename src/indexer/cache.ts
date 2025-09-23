@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { Address, ParseResult } from '../types';
+import { ParseResult } from '../types';
 
 /**
  * Cache key based on file path, modification time, and size

@@ -117,8 +117,6 @@ export async function revealInEditor(item: TerraformTreeItem): Promise<void> {
 /**
  * Register the reveal command
  */
-export function registerRevealCommand(
-  context: vscode.ExtensionContext
-): vscode.Disposable {
+export function registerRevealCommand(): vscode.Disposable {
   return vscode.commands.registerCommand('tfnav.reveal', revealInEditor);
 }
