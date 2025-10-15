@@ -1,4 +1,4 @@
-# Terraform Navigator
+# Terraform Navigator (tf-nav)
 
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/owenrumney.tf-nav?style=flat-square&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=owenrumney.tf-nav)
 [![Downloads](https://img.shields.io/visual-studio-marketplace/d/owenrumney.tf-nav?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=owenrumney.tf-nav)
@@ -219,7 +219,7 @@ Found a bug or have a feature request?
 
 - 🐛 **Report Issues**: [GitHub Issues](https://github.com/owenrumney/tf-nav/issues)
 - 💡 **Feature Requests**: [GitHub Discussions](https://github.com/owenrumney/tf-nav/discussions)
-- ⭐ **Star the Project**: [GitHub Repository](https://github.com/owenrumney/tf-nav)
+- ⭐ **Star the Project**: [GitHub Repository](https://github.com/owenrumney/tf-nav) 
 
 ## 📄 **License**
 
